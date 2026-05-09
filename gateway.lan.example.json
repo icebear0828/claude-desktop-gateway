@@ -1,0 +1,30 @@
+{
+  "host": "0.0.0.0",
+  "port": 8787,
+  "gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
+  "tlsCertFile": "certs/gateway.crt",
+  "tlsKeyFile": "certs/gateway.key",
+  "providers": {
+    "openrouter": {
+      "profile": "openai-chat",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "referrer": "",
+      "title": "Claude Gateway",
+      "capabilities": {
+        "streaming": true,
+        "tools": true,
+        "jsonMode": false
+      }
+    }
+  },
+  "routes": {
+    "claude-inclusionai/ring-2.6-1t:free": [
+      {
+        "provider": "openrouter",
+        "model": "inclusionai/ring-2.6-1t:free",
+        "displayName": "OpenRouter Ring 2.6 1T Free"
+      }
+    ]
+  }
+}

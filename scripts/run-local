@@ -1,0 +1,67 @@
+#!/usr/bin/env sh
+set -eu
+
+usage() {
+  echo "usage: scripts/run-local [--dry-run]" >&2
+}
+
+dry_run=0
+case "${1:-}" in
+  --dry-run)
+    dry_run=1
+    shift
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+if [ "$#" -ne 0 ]; then
+  usage
+  exit 2
+fi
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+env_file=${CLAUDE_GATEWAY_ENV_FILE:-"$repo_root/.env.local"}
+
+if [ ! -f "$env_file" ]; then
+  echo "missing env file: $env_file" >&2
+  echo "copy .env.local.example to .env.local and set OPENROUTER_API_KEY and CLAUDE_GATEWAY_API_KEY" >&2
+  exit 1
+fi
+
+set -a
+. "$env_file"
+set +a
+
+config_file=${CLAUDE_GATEWAY_CONFIG:-"$repo_root/gateway.local.json"}
+
+if [ ! -f "$config_file" ]; then
+  echo "missing config file: $config_file" >&2
+  echo "copy gateway.local.example.json to gateway.local.json" >&2
+  exit 1
+fi
+
+require_env() {
+  name=$1
+  eval "value=\${$name:-}"
+  if [ -z "$value" ]; then
+    echo "$name is required" >&2
+    exit 1
+  fi
+}
+
+require_env OPENROUTER_API_KEY
+require_env CLAUDE_GATEWAY_API_KEY
+
+export CLAUDE_GATEWAY_CONFIG="$config_file"
+
+if [ "$dry_run" -eq 1 ]; then
+  echo "local gateway configuration OK"
+  exit 0
+fi
+
+cd "$repo_root"
+exec go run ./cmd/gateway
