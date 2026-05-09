@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Desktop Gateway</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="kicker" data-i18n="nav.kicker">LOCAL CONSOLE</p>
+          <h1>CLAUDE DESKTOP GATEWAY</h1>
+        </div>
+        <div class="top-actions">
+          <div class="language-switcher" role="group" aria-label="Language" data-i18n-attr="aria-label:nav.language">
+            <button id="locale-en" class="button button-small button-secondary" type="button" data-locale="en" data-i18n="nav.english">EN</button>
+            <button id="locale-zh" class="button button-small button-secondary" type="button" data-locale="zh-CN" data-i18n="nav.chinese">中文</button>
+          </div>
+          <button id="refresh" class="button button-primary" type="button" data-i18n="nav.refresh">REFRESH</button>
+        </div>
+      </header>
+
+      <section class="grid grid-main" aria-label="Gateway overview" data-i18n-attr="aria-label:sections.gatewayOverview">
+        <article class="block block-heavy">
+          <div class="block-heading">
+            <h2 data-i18n="gateway.title">GATEWAY</h2>
+            <span id="gateway-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+          </div>
+          <dl class="facts">
+            <div>
+              <dt data-i18n="gateway.listenUrl">LISTEN URL</dt>
+              <dd id="listen-url">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="gateway.health">HEALTH</dt>
+              <dd id="health-url">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="gateway.pid">PID</dt>
+              <dd id="gateway-pid">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="gateway.log">LOG</dt>
+              <dd id="gateway-log">-</dd>
+            </div>
+          </dl>
+          <p id="gateway-detail" class="mono-line">-</p>
+        </article>
+
+        <article class="block">
+          <div class="block-heading">
+            <h2 data-i18n="config.title">CONFIG</h2>
+            <span id="config-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+          </div>
+          <dl class="facts compact">
+            <div>
+              <dt data-i18n="config.file">FILE</dt>
+              <dd id="config-path">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="config.project">PROJECT</dt>
+              <dd id="project-root">-</dd>
+            </div>
+          </dl>
+          <p id="config-error" class="notice hidden"></p>
+        </article>
+      </section>
+
+      <section class="block" aria-labelledby="secrets-title">
+        <div class="block-heading">
+          <div>
+            <h2 id="secrets-title" data-i18n="keys.title">KEYS</h2>
+            <p id="env-path" class="mono-line">-</p>
+          </div>
+          <span id="editor-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+        </div>
+        <div id="secret-list" class="secret-list"></div>
+        <p id="editor-message" class="notice hidden"></p>
+      </section>
+
+      <section class="block" aria-labelledby="models-title">
+        <div class="block-heading">
+          <h2 id="models-title" data-i18n="models.title">MODELS</h2>
+          <span id="model-count" class="chip">0 ROUTES</span>
+        </div>
+        <form id="route-form" class="editor-form">
+          <input id="route-original-id" type="hidden" />
+          <div class="form-grid">
+            <label class="field">
+              <span data-i18n="models.desktopId">DESKTOP ID</span>
+              <input id="route-desktop-id" class="input" type="text" autocomplete="off" required />
+            </label>
+            <label class="field">
+              <span data-i18n="models.displayName">DISPLAY NAME</span>
+              <input id="route-display-name" class="input" type="text" autocomplete="off" />
+            </label>
+            <label class="field field-wide">
+              <span data-i18n="models.upstreamModel">UPSTREAM MODEL</span>
+              <input id="route-upstream-model" class="input" type="text" autocomplete="off" required />
+            </label>
+            <label class="field">
+              <span data-i18n="models.provider">PROVIDER</span>
+              <select id="route-provider" class="input" required></select>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="route-save" class="button button-primary" type="submit" data-i18n="models.save">SAVE MODEL</button>
+            <button id="route-suggest" class="button button-secondary" type="button" data-i18n="models.suggest">SUGGEST ID</button>
+            <button id="route-reset" class="button button-secondary" type="button" data-i18n="models.reset">RESET</button>
+          </div>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="models.desktopId">DESKTOP ID</th>
+                <th data-i18n="models.displayName">DISPLAY NAME</th>
+                <th data-i18n="models.provider">PROVIDER</th>
+                <th data-i18n="models.upstream">UPSTREAM</th>
+                <th data-i18n="models.action">ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="routes-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="grid grid-secondary" aria-label="Providers and Claude Desktop" data-i18n-attr="aria-label:sections.providersAndDesktop">
+        <article class="block">
+          <div class="block-heading">
+            <h2 data-i18n="providers.title">PROVIDERS</h2>
+            <span id="provider-count" class="chip">0</span>
+          </div>
+          <div id="providers-list" class="list"></div>
+        </article>
+
+        <article class="block">
+          <div class="block-heading">
+            <h2 data-i18n="desktop.title">CLAUDE DESKTOP</h2>
+            <span id="desktop-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+          </div>
+          <dl class="facts compact">
+            <div>
+              <dt data-i18n="desktop.appliedId">APPLIED ID</dt>
+              <dd id="desktop-applied">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="desktop.activeProfile">ACTIVE PROFILE</dt>
+              <dd id="desktop-profile">-</dd>
+            </div>
+          </dl>
+          <div id="desktop-issues" class="issues"></div>
+        </article>
+      </section>
+
+      <footer class="footer">
+        <span id="generated-at">-</span>
+      </footer>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
