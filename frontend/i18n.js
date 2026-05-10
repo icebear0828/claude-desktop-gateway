@@ -207,7 +207,12 @@ export function applyTranslations(root, locale) {
     documentElement.lang = normalized;
   }
   for (const node of scope.querySelectorAll("[data-i18n]")) {
-    node.textContent = translate(normalized, node.getAttribute("data-i18n"));
+    const key = node.getAttribute("data-i18n");
+    node.textContent = translate(normalized, key);
+    if (node.classList?.contains("button")) {
+      node.setAttribute("data-text-en", translate("en", key));
+      node.setAttribute("data-text-zh", translate("zh-CN", key));
+    }
   }
   for (const node of scope.querySelectorAll("[data-i18n-attr]")) {
     const raw = node.getAttribute("data-i18n-attr") || "";
