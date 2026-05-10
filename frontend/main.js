@@ -81,8 +81,11 @@ function clear(node) {
   }
 }
 
-function appendCell(row, text) {
+function appendCell(row, text, className = "") {
   const cell = document.createElement("td");
+  if (className) {
+    cell.className = className;
+  }
   cell.textContent = text || "-";
   row.appendChild(cell);
 }
@@ -99,17 +102,22 @@ function appendButton(parent, key, className, onClick) {
   parent.appendChild(button);
 }
 
+function setNotice(node, message, state = "error") {
+  if (!node) return;
+  const hasMessage = Boolean(message);
+  node.textContent = hasMessage ? String(message) : "";
+  node.classList.toggle("hidden", !hasMessage);
+  node.classList.toggle("notice-success", hasMessage && state === "ok");
+  node.classList.toggle("notice-error", hasMessage && state !== "ok");
+}
+
 function showEditorMessage(message, state = "error") {
   setStatus(elements.editorState, state);
-  setText(elements.editorMessage, message);
-  elements.editorMessage?.classList.toggle("hidden", !message);
-  elements.editorMessage?.classList.toggle("notice-success", state === "ok");
+  setNotice(elements.editorMessage, message, state);
 }
 
 function showDesktopMessage(message, state = "error") {
-  setText(elements.desktopMessage, message);
-  elements.desktopMessage?.classList.toggle("hidden", !message);
-  elements.desktopMessage?.classList.toggle("notice-success", state === "ok");
+  setNotice(elements.desktopMessage, message, state);
 }
 
 function updateLocaleControls() {
@@ -154,6 +162,20 @@ function capabilityText(name, enabled) {
   return t("providers.capability", { name, state: enabled ? "on" : "off" });
 }
 
+function appendProviderDetail(parent, label, value) {
+  const row = document.createElement("div");
+  row.className = "provider-detail";
+  const term = document.createElement("dt");
+  term.className = "provider-detail-label";
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.className = "provider-detail-value";
+  description.textContent = value || "-";
+  row.appendChild(term);
+  row.appendChild(description);
+  parent.appendChild(row);
+}
+
 function renderRoutes(routes) {
   clear(elements.routesBody);
   setText(elements.modelCount, t("models.count", { count: routes.length }));
@@ -170,7 +192,7 @@ function renderRoutes(routes) {
     const row = document.createElement("tr");
     appendCell(row, route.desktopID);
     appendCell(row, route.displayName);
-    appendCell(row, route.provider);
+    appendCell(row, route.provider, "route-provider-cell");
     appendCell(row, route.upstreamModel);
 
     const actionCell = document.createElement("td");
@@ -194,22 +216,26 @@ function renderProviders(providers) {
   }
   for (const provider of providers) {
     const item = document.createElement("section");
-    item.className = "list-item";
+    item.className = "list-item provider-item";
     const title = document.createElement("h3");
     title.textContent = provider.name;
-    const meta = document.createElement("p");
-    meta.className = "mono-line";
+    const details = document.createElement("dl");
+    details.className = "provider-details";
     const caps = provider.capabilities || {};
-    meta.textContent = [
-      provider.profile,
-      provider.baseUrl,
-      `key=${provider.apiKeyEnv || "-"}`,
-      capabilityText("stream", capValue(caps, "Streaming")),
-      capabilityText("tools", capValue(caps, "Tools")),
-      capabilityText("json", capValue(caps, "JSONMode")),
-    ].join(" / ");
+    appendProviderDetail(details, t("providers.profile"), provider.profile);
+    appendProviderDetail(details, t("providers.baseUrl"), provider.baseUrl);
+    appendProviderDetail(details, t("providers.apiKey"), provider.apiKeyEnv);
+    appendProviderDetail(
+      details,
+      t("providers.capabilities"),
+      [
+        capabilityText("stream", capValue(caps, "Streaming")),
+        capabilityText("tools", capValue(caps, "Tools")),
+        capabilityText("json", capValue(caps, "JSONMode")),
+      ].join(" / "),
+    );
     item.appendChild(title);
-    item.appendChild(meta);
+    item.appendChild(details);
     elements.providersList.appendChild(item);
   }
 }
@@ -335,8 +361,7 @@ function renderDashboard(dashboard) {
 
   const hasConfigError = Boolean(dashboard.configError);
   setStatus(elements.configState, hasConfigError ? "error" : "ok");
-  setText(elements.configError, dashboard.configError);
-  elements.configError?.classList.toggle("hidden", !hasConfigError);
+  setNotice(elements.configError, dashboard.configError, "error");
 
   renderProviders(dashboard.providers || []);
 
@@ -355,7 +380,7 @@ function renderEditor(editor) {
   currentEditor = editor;
   setStatus(elements.editorState, "ok");
   setText(elements.envPath, editor.envPath);
-  elements.editorMessage?.classList.add("hidden");
+  setNotice(elements.editorMessage, "");
   renderSecrets(editor.secrets || []);
   renderProviderOptions(editor.config?.providers || []);
   renderRoutes(editor.config?.routes || []);
