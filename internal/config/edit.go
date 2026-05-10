@@ -33,10 +33,12 @@ type EditableProvider struct {
 }
 
 type EditableRoute struct {
-	DesktopID     string `json:"desktopID"`
-	Provider      string `json:"provider"`
-	UpstreamModel string `json:"upstreamModel"`
-	DisplayName   string `json:"displayName"`
+	DesktopID         string            `json:"desktopID"`
+	Provider          string            `json:"provider"`
+	UpstreamModel     string            `json:"upstreamModel"`
+	DisplayName       string            `json:"displayName"`
+	DynamicFreeModels DynamicFreeModels `json:"dynamicFreeModels"`
+	Cache             RouteCache        `json:"cache"`
 }
 
 func NewEditableRoute(provider string, upstreamModel string, displayName string) EditableRoute {
@@ -171,10 +173,12 @@ func editableFromRaw(path string, raw fileConfig) (EditableFile, error) {
 				displayName = desktopID
 			}
 			editable.Routes = append(editable.Routes, EditableRoute{
-				DesktopID:     desktopID,
-				Provider:      provider,
-				UpstreamModel: upstreamModel,
-				DisplayName:   displayName,
+				DesktopID:         desktopID,
+				Provider:          provider,
+				UpstreamModel:     upstreamModel,
+				DisplayName:       displayName,
+				DynamicFreeModels: dynamicFreeModelsFromFile(route.DynamicFreeModels),
+				Cache:             routeCacheFromFile(route.Cache),
 			})
 		}
 	}
@@ -260,9 +264,11 @@ func editableToRaw(editable EditableFile) (fileConfig, error) {
 			return fileConfig{}, fmt.Errorf("route %q references unknown provider %q", desktopID, provider)
 		}
 		raw.Routes[desktopID] = []fileRoute{{
-			Provider:    provider,
-			Model:       upstreamModel,
-			DisplayName: strings.TrimSpace(route.DisplayName),
+			Provider:          provider,
+			Model:             upstreamModel,
+			DisplayName:       strings.TrimSpace(route.DisplayName),
+			DynamicFreeModels: fileDynamicFreeModelsFromRoute(route.DynamicFreeModels),
+			Cache:             fileRouteCacheFromRoute(route.Cache),
 		}}
 		knownDesktopIDs[desktopID] = true
 	}

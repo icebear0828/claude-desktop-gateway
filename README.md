@@ -228,7 +228,11 @@ Default URL: `http://127.0.0.1:8787`
   "inferenceGatewayApiKey": "local-client-key",
   "inferenceGatewayAuthScheme": "bearer",
   "inferenceModels": [
-    "claude-inclusionai/ring-2.6-1t:free"
+    "claude-ring-2-6-1t-free",
+    "claude-free-auto",
+    "claude-free-agent",
+    "claude-free-coder",
+    "claude-free-fast"
   ]
 }
 ```
@@ -242,7 +246,7 @@ upstream model:
 {
   "providers": {
     "openrouter": {
-      "profile": "openai-chat",
+      "profile": "anthropic-messages",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
       "capabilities": {
@@ -253,11 +257,40 @@ upstream model:
     }
   },
   "routes": {
-    "claude-inclusionai/ring-2.6-1t:free": [
+    "claude-ring-2-6-1t-free": [
       {
         "provider": "openrouter",
         "model": "inclusionai/ring-2.6-1t:free",
-        "displayName": "OpenRouter Ring 2.6 1T Free"
+        "displayName": "OpenRouter Ring 2.6 1T Free",
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-agent": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Agent Auto",
+        "dynamicFreeModels": {
+          "enabled": true,
+          "requiredParameters": ["tools", "tool_choice"],
+          "minContextLength": 32768,
+          "maxModels": 4,
+          "catalogCacheTTLSeconds": 900,
+          "fallback": [
+            "inclusionai/ring-2.6-1t:free",
+            "qwen/qwen3-coder:free",
+            "z-ai/glm-4.5-air:free",
+            "openai/gpt-oss-120b:free",
+            "openrouter/free"
+          ]
+        },
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
       }
     ]
   }
@@ -270,6 +303,41 @@ the default desktop ID is the upstream model prefixed with `claude-`, unless it
 already starts with `claude-` or `anthropic/claude-`. The only custom ID verified
 with Claude Desktop so far is `claude-inclusionai/ring-2.6-1t:free`.
 
+`dynamicFreeModels` turns a route into a runtime free-model selector. The
+gateway fetches OpenRouter's `/models` catalog, keeps only zero-price models,
+filters by `requiredParameters` such as `tools` and `tool_choice`, and caches
+the catalog for `catalogCacheTTLSeconds`. Hardcoded entries under `fallback`
+are used only when catalog discovery returns no usable model or when dynamic
+routes hit retryable upstream failures.
+
+`model: "openrouter/free"` is still useful for `claude-free-auto`: it delegates
+model selection to OpenRouter's free router. The example config exposes both
+that direct auto route and task-oriented dynamic aliases:
+
+```text
+claude-ring-2-6-1t-free -> dedicated Ring 2.6 1T route
+claude-free-auto        -> OpenRouter's free router
+claude-free-agent       -> dynamic free tools-capable models, then fallback list
+claude-free-coder       -> dynamic free tools-capable models, then coding fallback list
+claude-free-fast        -> dynamic free general models, then fast fallback list
+```
+
+`cache.enabled` sends OpenRouter response-cache headers on upstream calls. The
+Anthropic Messages profile also preserves Anthropic `cache_control` blocks, so
+Claude Desktop prompt-cache hints are not stripped. Cache status headers such as
+`X-OpenRouter-Cache-Status` are forwarded back to the client when OpenRouter
+returns them.
+
+Use `profile: "anthropic-messages"` for OpenRouter's Anthropic Messages
+endpoint. In this mode the gateway rewrites only the model ID and preserves
+Anthropic-native request fields such as `tools`, `tool_choice`, `tool_result`,
+`cache_control`, and `thinking`. Use `profile: "openai-chat"` only for
+OpenAI-compatible providers that do not expose an Anthropic Messages endpoint.
+
+Each route array is tried in order. The gateway falls back to the next route on
+upstream 402 provider spend-limit errors, 429, 5xx, or transport failures, but
+it does not hide authentication or validation errors such as 400, 401, or 403.
+
 Provider `capabilities` default to streaming and tools enabled. Set
 `"streaming": false` or `"tools": false` for providers that cannot support
 those request shapes; the gateway rejects unsupported requests before calling
@@ -279,12 +347,13 @@ Without a JSON config, the env-only fallback keeps these Claude-shaped aliases
 mapped to OpenRouter's current free 1T model:
 
 ```text
-claude-opus-4-7   -> inclusionai/ring-2.6-1t:free
-claude-opus-4.7   -> inclusionai/ring-2.6-1t:free
-claude-sonnet-4-6 -> inclusionai/ring-2.6-1t:free
-claude-sonnet-4.6 -> inclusionai/ring-2.6-1t:free
-claude-haiku-4-5  -> inclusionai/ring-2.6-1t:free
-claude-haiku-4.5  -> inclusionai/ring-2.6-1t:free
+claude-ring-2-6-1t-free -> inclusionai/ring-2.6-1t:free
+claude-opus-4-7         -> inclusionai/ring-2.6-1t:free
+claude-opus-4.7         -> inclusionai/ring-2.6-1t:free
+claude-sonnet-4-6       -> inclusionai/ring-2.6-1t:free
+claude-sonnet-4.6       -> inclusionai/ring-2.6-1t:free
+claude-haiku-4-5        -> inclusionai/ring-2.6-1t:free
+claude-haiku-4.5        -> inclusionai/ring-2.6-1t:free
 ```
 
 Override with JSON:
@@ -320,9 +389,13 @@ After exporting `OPENROUTER_API_KEY`, run:
 
 ```bash
 GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run TestRealOpenRouterCompletesThreeSequentialCalls -count=1
+GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run TestRealOpenRouterAnthropicMessagesCompletesThreeSequentialCalls -count=1
+GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run 'TestRealOpenRouterAnthropicMessages(Streams|Tools)ThreeSequentialCalls' -count=1
 ```
 
-The test performs three sequential calls against `inclusionai/ring-2.6-1t:free`.
+Each test performs three sequential calls against `inclusionai/ring-2.6-1t:free`.
+The free upstream provider may return 429; use route fallback or a steadier
+upstream model before marking Claude Desktop compatibility complete.
 
 ## Claude Desktop E2E
 

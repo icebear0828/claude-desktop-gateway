@@ -105,7 +105,7 @@ window:
 
 ```json
 [
-  "claude-inclusionai/ring-2.6-1t:free"
+  "claude-ring-2-6-1t-free"
 ]
 ```
 
@@ -159,12 +159,48 @@ The gateway config keeps naming explicit:
 
 ```json
 {
+  "providers": {
+    "openrouter": {
+      "profile": "anthropic-messages",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  },
   "routes": {
-    "claude-inclusionai/ring-2.6-1t:free": [
+    "claude-ring-2-6-1t-free": [
       {
         "provider": "openrouter",
         "model": "inclusionai/ring-2.6-1t:free",
-        "displayName": "OpenRouter Ring 2.6 1T Free"
+        "displayName": "OpenRouter Ring 2.6 1T Free",
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-agent": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Agent Auto",
+        "dynamicFreeModels": {
+          "enabled": true,
+          "requiredParameters": ["tools", "tool_choice"],
+          "minContextLength": 32768,
+          "maxModels": 4,
+          "catalogCacheTTLSeconds": 900,
+          "fallback": [
+            "inclusionai/ring-2.6-1t:free",
+            "qwen/qwen3-coder:free",
+            "z-ai/glm-4.5-air:free",
+            "openai/gpt-oss-120b:free",
+            "openrouter/free"
+          ]
+        },
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
       }
     ]
   }
@@ -173,3 +209,32 @@ The gateway config keeps naming explicit:
 
 `displayName` is returned by `/v1/models` and reserved for the GUI route editor.
 Claude Desktop still uses the route key as the model ID.
+
+For OpenRouter, prefer `profile: "anthropic-messages"` over `openai-chat` when
+testing Claude Desktop compatibility. The Anthropic Messages profile rewrites
+only the model ID and forwards Anthropic-native fields such as `tools`,
+`tool_result`, `cache_control`, and `thinking` to OpenRouter's `/messages`
+endpoint.
+
+If a route has multiple upstream entries, the gateway tries them in order and
+falls back on 402 provider spend-limit errors, 429, 5xx, or transport failures.
+Authentication and validation errors still stop immediately so bad keys or bad
+request shapes are visible.
+
+For free defaults, prefer exposing a small set of desktop aliases:
+
+```text
+claude-ring-2-6-1t-free
+claude-free-auto
+claude-free-agent
+claude-free-coder
+claude-free-fast
+```
+
+`claude-ring-2-6-1t-free` is the dedicated Ring route for users who need that
+specific model. `claude-free-auto` can point directly at `openrouter/free`. The
+other aliases should use `dynamicFreeModels` so the gateway refreshes
+OpenRouter's free model catalog at runtime and uses the hardcoded list only as
+fallback. Keep `cache.enabled` on those routes so OpenRouter response caching is
+requested, and verify `X-OpenRouter-Cache-Status` when diagnosing cache hit
+rate.

@@ -1,5 +1,24 @@
 # Project Memory
 
+## 2026-05-10 OpenRouter Anthropic Messages Profile
+
+- Added gateway provider profile `anthropic-messages` for OpenRouter's `/messages` endpoint.
+- The profile rewrites only the request `model` from Claude Desktop route ID to upstream model and preserves Anthropic-native fields such as `tools`, `tool_choice`, `tool_result`, `cache_control`, and `thinking`.
+- Non-stream `/messages` responses rewrite top-level `model` back to the Claude Desktop model ID. Streaming `/messages` responses pass SSE through and rewrite `message_start.message.model` back to the Desktop ID.
+- Route arrays now have runtime fallback semantics: upstream 429, 5xx, and transport failures fall through to the next route; 400/401/403 do not fallback.
+- OpenRouter errors now include safe upstream metadata such as provider name and metadata raw message when present; keys and prompt content remain hidden.
+- Real OpenRouter `anthropic-messages` non-stream three-call test passed on 2026-05-10 against `inclusionai/ring-2.6-1t:free`.
+- Real stream/tools tests can still fail due to `Novita` 429 on the free Ring model. Treat this as an upstream/provider stability issue unless a fallback route or steadier model is configured.
+
+## 2026-05-10 Dynamic Free Model Defaults
+
+- Route entries can now include `dynamicFreeModels` to fetch OpenRouter's `/models` catalog at runtime, filter zero-price models by required parameters such as `tools` and `tool_choice`, and cache the catalog for `catalogCacheTTLSeconds`.
+- Hardcoded free model IDs should live under `dynamicFreeModels.fallback` only. The gateway appends them after dynamically discovered free models, or uses them when catalog discovery fails.
+- Route entries can include `cache` with `enabled` and `ttlSeconds`; enabled routes send OpenRouter response-cache headers and forward safe cache status headers such as `X-OpenRouter-Cache-Status` back to the client.
+- Example configs expose `claude-ring-2-6-1t-free`, `claude-free-auto`, `claude-free-agent`, `claude-free-coder`, and `claude-free-fast`. Ring is a dedicated selectable route; `claude-free-auto` points directly at `openrouter/free`; the task-oriented aliases use dynamic discovery first.
+- Gateway fallback now treats upstream 402 provider spend-limit errors as retryable, so a single free provider such as Venice exhausting an API-key spend limit does not block the whole route chain.
+- On 2026-05-10, `gateway.local.json` and the active Claude Desktop local profile were updated to expose `claude-ring-2-6-1t-free` as a standalone selectable model alongside the free auto/agent/coder/fast aliases. Doctor reported no config issues; Claude Desktop still needs Cmd+Q restart to reload profile state.
+
 ## 2026-05-09 Local Gateway Startup
 
 - Preferred local MVP startup command is `./scripts/run-local`.

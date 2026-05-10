@@ -4,7 +4,7 @@
   "gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
   "providers": {
     "openrouter": {
-      "profile": "openai-chat",
+      "profile": "anthropic-messages",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
       "referrer": "",
@@ -17,11 +17,99 @@
     }
   },
   "routes": {
-    "claude-inclusionai/ring-2.6-1t:free": [
+    "claude-ring-2-6-1t-free": [
       {
         "provider": "openrouter",
         "model": "inclusionai/ring-2.6-1t:free",
-        "displayName": "OpenRouter Ring 2.6 1T Free"
+        "displayName": "OpenRouter Ring 2.6 1T Free",
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-auto": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Auto",
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-agent": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Agent Auto",
+        "dynamicFreeModels": {
+          "enabled": true,
+          "requiredParameters": ["tools", "tool_choice"],
+          "minContextLength": 32768,
+          "maxModels": 4,
+          "catalogCacheTTLSeconds": 900,
+          "fallback": [
+            "inclusionai/ring-2.6-1t:free",
+            "qwen/qwen3-coder:free",
+            "z-ai/glm-4.5-air:free",
+            "openai/gpt-oss-120b:free",
+            "openrouter/free"
+          ]
+        },
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-coder": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Coder Auto",
+        "dynamicFreeModels": {
+          "enabled": true,
+          "requiredParameters": ["tools", "tool_choice"],
+          "minContextLength": 32768,
+          "maxModels": 4,
+          "catalogCacheTTLSeconds": 900,
+          "fallback": [
+            "qwen/qwen3-coder:free",
+            "inclusionai/ring-2.6-1t:free",
+            "poolside/laguna-m.1:free",
+            "baidu/cobuddy:free",
+            "openrouter/free"
+          ]
+        },
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
+      }
+    ],
+    "claude-free-fast": [
+      {
+        "provider": "openrouter",
+        "model": "openrouter/free",
+        "displayName": "OpenRouter Free Fast Auto",
+        "dynamicFreeModels": {
+          "enabled": true,
+          "minContextLength": 8192,
+          "maxModels": 3,
+          "catalogCacheTTLSeconds": 900,
+          "fallback": [
+            "z-ai/glm-4.5-air:free",
+            "openai/gpt-oss-20b:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "openrouter/free"
+          ]
+        },
+        "cache": {
+          "enabled": true,
+          "ttlSeconds": 300
+        }
       }
     ]
   }
