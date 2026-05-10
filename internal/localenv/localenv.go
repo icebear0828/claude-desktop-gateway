@@ -38,6 +38,39 @@ func SecretStatus(path string, names []string) ([]SecretEnv, error) {
 	return statuses, nil
 }
 
+func SecretValue(path string, name string) (string, error) {
+	key := strings.TrimSpace(name)
+	if !validKey(key) {
+		return "", fmt.Errorf("invalid env var name %q", name)
+	}
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value, nil
+	}
+
+	lines, err := readLines(path)
+	if err != nil {
+		return "", err
+	}
+	value := ""
+	found := false
+	for _, line := range lines {
+		raw, ok := assignmentValue(line, key)
+		if !ok {
+			continue
+		}
+		parsed, err := parseEnvValue(raw)
+		if err != nil {
+			return "", fmt.Errorf("parse %s: %w", key, err)
+		}
+		value = parsed
+		found = true
+	}
+	if !found {
+		return "", nil
+	}
+	return value, nil
+}
+
 func SaveSecret(path string, name string, value string) error {
 	key := strings.TrimSpace(name)
 	if !validKey(key) {
@@ -121,18 +154,81 @@ func writeLines(path string, lines []string) error {
 }
 
 func assignsKey(line string, key string) bool {
+	_, ok := assignmentValue(line, key)
+	return ok
+}
+
+func assignmentValue(line string, key string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return false
+		return "", false
 	}
 	if strings.HasPrefix(trimmed, "export ") {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
 	}
 	left, _, ok := strings.Cut(trimmed, "=")
 	if !ok {
-		return false
+		return "", false
 	}
-	return strings.TrimSpace(left) == key
+	if strings.TrimSpace(left) != key {
+		return "", false
+	}
+	_, right, _ := strings.Cut(trimmed, "=")
+	return right, true
+}
+
+func parseEnvValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(trimmed, "'") {
+		parsed, ok := parseSingleQuotedValue(trimmed)
+		if !ok {
+			return "", errors.New("invalid single-quoted value")
+		}
+		return parsed, nil
+	}
+	if strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) && len(trimmed) >= 2 {
+		inner := strings.TrimSuffix(strings.TrimPrefix(trimmed, `"`), `"`)
+		inner = strings.ReplaceAll(inner, `\"`, `"`)
+		inner = strings.ReplaceAll(inner, `\\`, `\`)
+		return inner, nil
+	}
+	if before, _, ok := strings.Cut(trimmed, " #"); ok {
+		return strings.TrimSpace(before), nil
+	}
+	return trimmed, nil
+}
+
+func parseSingleQuotedValue(value string) (string, bool) {
+	var b strings.Builder
+	index := 0
+	for index < len(value) {
+		if value[index] != '\'' {
+			if strings.TrimSpace(value[index:]) == "" {
+				return b.String(), true
+			}
+			return "", false
+		}
+		index++
+		for index < len(value) && value[index] != '\'' {
+			b.WriteByte(value[index])
+			index++
+		}
+		if index >= len(value) {
+			return "", false
+		}
+		index++
+		if index >= len(value) {
+			return b.String(), true
+		}
+		if index+1 < len(value) && value[index] == '\\' && value[index+1] == '\'' {
+			b.WriteByte('\'')
+			index += 2
+		}
+	}
+	return b.String(), true
 }
 
 func validKey(name string) bool {

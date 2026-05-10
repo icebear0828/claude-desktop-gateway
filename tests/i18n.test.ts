@@ -40,6 +40,12 @@ describe("frontend i18n", () => {
     expect(formatMessage("zh-CN", "models.count", { count: 2 })).toBe("2 个路由");
   });
 
+  it("translates Claude Desktop repair actions", () => {
+    expect(translate("en", "desktop.repair")).toBe("REPAIR CONFIG");
+    expect(translate("zh-CN", "desktop.repair")).toBe("修复配置");
+    expect(translate("zh-CN", "desktop.repairDone")).toContain("重启 Claude Desktop");
+  });
+
   it("stores only supported locale values", () => {
     const storage = createMemoryStorage();
 

@@ -38,8 +38,10 @@ const elements = {
   providerCount: document.getElementById("provider-count"),
   providersList: document.getElementById("providers-list"),
   desktopState: document.getElementById("desktop-state"),
+  desktopApply: document.getElementById("desktop-apply"),
   desktopApplied: document.getElementById("desktop-applied"),
   desktopProfile: document.getElementById("desktop-profile"),
+  desktopMessage: document.getElementById("desktop-message"),
   desktopIssues: document.getElementById("desktop-issues"),
   generatedAt: document.getElementById("generated-at"),
 };
@@ -101,6 +103,13 @@ function showEditorMessage(message, state = "error") {
   setStatus(elements.editorState, state);
   setText(elements.editorMessage, message);
   elements.editorMessage?.classList.toggle("hidden", !message);
+  elements.editorMessage?.classList.toggle("notice-success", state === "ok");
+}
+
+function showDesktopMessage(message, state = "error") {
+  setText(elements.desktopMessage, message);
+  elements.desktopMessage?.classList.toggle("hidden", !message);
+  elements.desktopMessage?.classList.toggle("notice-success", state === "ok");
 }
 
 function updateLocaleControls() {
@@ -332,10 +341,12 @@ function renderDashboard(dashboard) {
   renderProviders(dashboard.providers || []);
 
   const desktop = dashboard.claudeDesktop || { state: "unknown", issues: [] };
+  const desktopIssues = desktop.issues || [];
   setStatus(elements.desktopState, desktop.state);
   setText(elements.desktopApplied, desktop.appliedId);
   setText(elements.desktopProfile, desktop.activeProfilePath);
-  renderIssues(desktop.issues || []);
+  elements.desktopApply?.classList.toggle("hidden", desktopIssues.length === 0);
+  renderIssues(desktopIssues);
 
   setText(elements.generatedAt, t("footer.updated", { time: dashboard.generatedAtIso || "-" }));
 }
@@ -577,6 +588,25 @@ async function deleteRoute(desktopID) {
   await saveEditorConfig({ ...config, routes: nextRoutes });
 }
 
+async function applyClaudeDesktopConfig() {
+  const method = bridge("ApplyClaudeDesktopConfig");
+  if (!method) {
+    showDesktopMessage(t("desktop.bridgeRepairUnavailable"));
+    return;
+  }
+  elements.desktopApply?.setAttribute("disabled", "true");
+  showDesktopMessage("");
+  try {
+    await method();
+    await loadDashboardOnly();
+    showDesktopMessage(t("desktop.repairDone"), "ok");
+  } catch (error) {
+    showDesktopMessage(error instanceof Error ? error.message : String(error));
+  } finally {
+    elements.desktopApply?.removeAttribute("disabled");
+  }
+}
+
 async function loadDashboardOnly() {
   try {
     const dashboard = await fetchDashboard();
@@ -612,6 +642,7 @@ for (const button of elements.localeButtons) {
 elements.routeForm?.addEventListener("submit", saveRoute);
 elements.routeSuggest?.addEventListener("click", suggestDesktopID);
 elements.routeReset?.addEventListener("click", resetRouteForm);
+elements.desktopApply?.addEventListener("click", applyClaudeDesktopConfig);
 
 applyTranslations(document, currentLocale);
 updateLocaleControls();
