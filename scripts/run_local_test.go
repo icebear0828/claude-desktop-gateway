@@ -202,13 +202,17 @@ func managedPIDForStatusTest(t *testing.T) string {
 		return strconv.Itoa(os.Getpid())
 	}
 
-	cmd := exec.Command("bash", "-c", "sleep 30")
-	if err := cmd.Start(); err != nil {
+	cmd := exec.Command("bash", "-c", "sleep 30 >/dev/null 2>&1 & echo $!")
+	output, err := cmd.Output()
+	if err != nil {
 		t.Fatalf("start bash sleep process: %v", err)
 	}
+	pid := strings.TrimSpace(string(output))
+	if _, err := strconv.Atoi(pid); err != nil {
+		t.Fatalf("bash sleep pid = %q: %v", pid, err)
+	}
 	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = exec.Command("bash", "-c", "kill "+pid).Run()
 	})
-	return strconv.Itoa(cmd.Process.Pid)
+	return pid
 }
