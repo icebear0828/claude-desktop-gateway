@@ -18,6 +18,7 @@
 - Example configs expose `claude-ring-2-6-1t-free`, `claude-free-auto`, `claude-free-agent`, `claude-free-coder`, and `claude-free-fast`. Ring is a dedicated selectable route; `claude-free-auto` points directly at `openrouter/free`; the task-oriented aliases use dynamic discovery first.
 - Gateway fallback now treats upstream 402 provider spend-limit errors as retryable, so a single free provider such as Venice exhausting an API-key spend limit does not block the whole route chain.
 - On 2026-05-10, `gateway.local.json` and the active Claude Desktop local profile were updated to expose `claude-ring-2-6-1t-free` as a standalone selectable model alongside the free auto/agent/coder/fast aliases. Doctor reported no config issues; Claude Desktop still needs Cmd+Q restart to reload profile state.
+- Follow-up review fixes on 2026-05-10: env-only OpenRouter now defaults to `anthropic-messages`; GUI route edits preserve `dynamicFreeModels` and `cache` metadata instead of dropping them on save.
 
 ## 2026-05-09 Local Gateway Startup
 

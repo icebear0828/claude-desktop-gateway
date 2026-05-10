@@ -25,6 +25,9 @@ func TestLoadFromEnvDefaultsOpenRouterRoutesToRingFree(t *testing.T) {
 		t.Fatalf("Port = %d, want 8787", cfg.Port)
 	}
 	provider := cfg.Providers[config.DefaultOpenRouterName]
+	if provider.Profile != "anthropic-messages" {
+		t.Fatalf("provider.Profile = %q, want anthropic-messages", provider.Profile)
+	}
 	if !provider.Capabilities.Streaming || !provider.Capabilities.Tools {
 		t.Fatalf("default capabilities = %#v", provider.Capabilities)
 	}

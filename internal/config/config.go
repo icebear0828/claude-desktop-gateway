@@ -153,7 +153,7 @@ func LoadFromEnv(env map[string]string) (Config, error) {
 		TLSKeyFile:    strings.TrimSpace(env["TLS_KEY_FILE"]),
 		Providers: map[string]Provider{
 			DefaultOpenRouterName: {
-				Profile:      "openai-chat",
+				Profile:      "anthropic-messages",
 				BaseURL:      strings.TrimRight(baseURL, "/"),
 				APIKey:       apiKey,
 				Referrer:     strings.TrimSpace(env["OPENROUTER_REFERRER"]),
