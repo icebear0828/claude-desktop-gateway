@@ -100,6 +100,10 @@ function showEditorMessage(message, state = "error") {
 }
 
 function updateLocaleControls() {
+  const switcher = document.querySelector(".language-switcher");
+  if (switcher) {
+    switcher.setAttribute("data-active-locale", currentLocale);
+  }
   for (const button of elements.localeButtons) {
     const isActive = button.getAttribute("data-locale") === currentLocale;
     button.classList.toggle("button-active", isActive);
@@ -372,8 +376,8 @@ function renderSecrets(secrets) {
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    appendButton(actions, t("actions.save"), "button button-small button-primary", () => saveSecret(name, input.value));
-    appendButton(actions, t("actions.delete"), "button button-small button-destructive", () => deleteSecret(name));
+    appendButton(actions, "actions.save", "button button-small button-primary", () => saveSecret(name, input.value));
+    appendButton(actions, "actions.delete", "button button-small button-destructive", () => deleteSecret(name));
 
     row.appendChild(label);
     row.appendChild(input);
