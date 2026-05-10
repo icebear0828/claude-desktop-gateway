@@ -44,6 +44,10 @@ func (a *App) DeleteSecret(input gui.SecretNameInput) (gui.EditorState, error) {
 	return a.service.DeleteSecret(input)
 }
 
+func (a *App) ApplyClaudeDesktopConfig() (gui.ClaudeDesktopApplyResult, error) {
+	return a.service.ApplyClaudeDesktopConfig()
+}
+
 func (a *App) SuggestedDesktopID(upstreamModel string) string {
 	return a.service.SuggestedDesktopID(upstreamModel)
 }

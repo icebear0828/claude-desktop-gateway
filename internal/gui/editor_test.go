@@ -3,8 +3,10 @@ package gui_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/local/claude-desktop-gateway/internal/claudedesktop"
 	"github.com/local/claude-desktop-gateway/internal/config"
 	"github.com/local/claude-desktop-gateway/internal/gui"
 )
@@ -154,6 +156,87 @@ func TestDeleteSecretUpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestApplyClaudeDesktopConfigRepairsBadActiveWindowsProfile(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := writeEditorConfig(t, repoRoot)
+	envPath := filepath.Join(repoRoot, ".env.local")
+	if err := os.WriteFile(envPath, []byte("export CLAUDE_GATEWAY_API_KEY='client-test-key'\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	t.Setenv("CLAUDE_GATEWAY_API_KEY", "")
+	t.Setenv("LOCALAPPDATA", "")
+	home := t.TempDir()
+	paths := claudedesktop.PathsForHome(home, "windows")
+	badProfileID := "fec4210e-00b4-481a-a754-e199a203fddb"
+	writeDesktopJSON(t, paths.MetaPath, `{
+		"appliedId": "fec4210e-00b4-481a-a754-e199a203fddb",
+		"entries": [{"id": "fec4210e-00b4-481a-a754-e199a203fddb", "name": "Bad Manual Profile"}]
+	}`)
+	writeDesktopJSON(t, filepath.Join(paths.ConfigLibraryPath, badProfileID+".json"), `{
+		"inferenceProvider": "gateway",
+		"inferenceGatewayBaseUrl": "http://127.0.0.1:8087/",
+		"inferenceGatewayApiKey": "old-key",
+		"inferenceGatewayAuthScheme": "",
+		"inferenceModels": "claude-free-auto"
+	}`)
+
+	service := gui.NewService(gui.Options{
+		RepoRoot:     repoRoot,
+		ConfigPath:   configPath,
+		EnvPath:      envPath,
+		DesktopPaths: paths,
+	})
+	result, err := service.ApplyClaudeDesktopConfig()
+	if err != nil {
+		t.Fatalf("ApplyClaudeDesktopConfig returned error: %v", err)
+	}
+
+	if result.ProfileID != claudedesktop.DefaultProfileID {
+		t.Fatalf("ProfileID = %q", result.ProfileID)
+	}
+	if result.BaseURL != "http://127.0.0.1:8787" {
+		t.Fatalf("BaseURL = %q", result.BaseURL)
+	}
+	if len(result.ModelIDs) != 1 || result.ModelIDs[0] != "claude-inclusionai/ring-2.6-1t:free" {
+		t.Fatalf("ModelIDs = %#v", result.ModelIDs)
+	}
+
+	report, err := claudedesktop.Diagnose(claudedesktop.DiagnosticOptions{
+		Paths:           paths,
+		ExpectedBaseURL: "http://127.0.0.1:8787",
+	})
+	if err != nil {
+		t.Fatalf("Diagnose returned error: %v", err)
+	}
+	if len(report.Issues) != 0 {
+		t.Fatalf("issues after repair = %#v", report.Issues)
+	}
+	if report.AppliedID != claudedesktop.DefaultProfileID {
+		t.Fatalf("AppliedID = %q", report.AppliedID)
+	}
+}
+
+func TestApplyClaudeDesktopConfigRequiresGatewayKey(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := writeEditorConfig(t, repoRoot)
+	envPath := filepath.Join(repoRoot, ".env.local")
+	t.Setenv("CLAUDE_GATEWAY_API_KEY", "")
+	service := gui.NewService(gui.Options{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		EnvPath:    envPath,
+	})
+
+	_, err := service.ApplyClaudeDesktopConfig()
+	if err == nil {
+		t.Fatal("ApplyClaudeDesktopConfig returned nil error without gateway key")
+	}
+	if !strings.Contains(err.Error(), "CLAUDE_GATEWAY_API_KEY") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func writeEditorConfig(t *testing.T, repoRoot string) string {
 	t.Helper()
 	configPath := filepath.Join(repoRoot, "gateway.local.json")
@@ -182,4 +265,14 @@ func writeEditorConfig(t *testing.T, repoRoot string) string {
 		t.Fatalf("write config: %v", err)
 	}
 	return configPath
+}
+
+func writeDesktopJSON(t *testing.T, path string, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create parent for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }

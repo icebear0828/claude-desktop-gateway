@@ -139,7 +139,10 @@
         <article class="block">
           <div class="block-heading">
             <h2 data-i18n="desktop.title">CLAUDE DESKTOP</h2>
-            <span id="desktop-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+            <div class="heading-actions">
+              <button id="desktop-apply" class="button button-small button-primary hidden" type="button" data-i18n="desktop.repair">REPAIR CONFIG</button>
+              <span id="desktop-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+            </div>
           </div>
           <dl class="facts compact">
             <div>
@@ -151,6 +154,7 @@
               <dd id="desktop-profile">-</dd>
             </div>
           </dl>
+          <p id="desktop-message" class="notice hidden"></p>
           <div id="desktop-issues" class="issues"></div>
         </article>
       </section>

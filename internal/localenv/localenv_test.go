@@ -68,3 +68,39 @@ func TestDeleteSecretRemovesOnlyMatchingAssignment(t *testing.T) {
 		t.Fatalf("unrelated key was removed:\n%s", got)
 	}
 }
+
+func TestSecretValueReadsQuotedExport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env.local")
+	body := "export CLAUDE_GATEWAY_API_KEY='client'\\''key$'\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	value, err := localenv.SecretValue(path, "CLAUDE_GATEWAY_API_KEY")
+	if err != nil {
+		t.Fatalf("SecretValue returned error: %v", err)
+	}
+
+	if value != "client'key$" {
+		t.Fatalf("value = %q, want shell-unquoted value", value)
+	}
+}
+
+func TestSecretValuePrefersProcessEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env.local")
+	if err := os.WriteFile(path, []byte("CLAUDE_GATEWAY_API_KEY=file-key\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	t.Setenv("CLAUDE_GATEWAY_API_KEY", "process-key")
+
+	value, err := localenv.SecretValue(path, "CLAUDE_GATEWAY_API_KEY")
+	if err != nil {
+		t.Fatalf("SecretValue returned error: %v", err)
+	}
+
+	if value != "process-key" {
+		t.Fatalf("value = %q, want process env value", value)
+	}
+}
