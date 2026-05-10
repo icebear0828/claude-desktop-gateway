@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .env.local
+MEMORY.md
+memory/
+docs/
 gateway.local.json
 gateway.lan.json
 claude_desktop_3p_config.local.json
