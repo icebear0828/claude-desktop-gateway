@@ -1,7 +1,40 @@
 # Claude Desktop Gateway
 
-Thin local inference gateway for Claude Desktop. It accepts Anthropic Messages
-requests at `/v1/messages` and forwards them to OpenRouter Chat Completions.
+Claude Desktop Gateway is a local provider gateway and configuration manager for
+Claude Desktop's third-party provider mode. It exposes Anthropic-compatible
+`/v1/models` and `/v1/messages` endpoints on localhost, maps Claude Desktop
+model IDs to upstream provider models, and forwards requests to OpenRouter first.
+
+This project is not a general OpenRouter SDK or a hosted proxy. If you are
+building your own app, script, or service, call OpenRouter directly. Use this
+gateway when the client is Claude Desktop and you want a local, inspectable layer
+that handles Claude Desktop provider configuration, model aliases, free-model
+selection, fallback routes, and safe local secret handling.
+
+## Why Not Call OpenRouter Directly?
+
+Direct OpenRouter calls are the right choice when you control the client code.
+The gateway exists for the Claude Desktop case, where the client expects a
+Claude-compatible provider endpoint and a stable list of Claude-shaped model IDs.
+
+Use this project when you need:
+
+- Claude Desktop to talk to OpenRouter through `http://127.0.0.1:8787`.
+- Stable Desktop model IDs such as `claude-free-coder` or
+  `claude-ring-2-6-1t-free`, while the gateway maps them to real upstream
+  OpenRouter model IDs.
+- Fallback across multiple OpenRouter routes when a free provider is rate
+  limited, overloaded, or blocked by provider spend limits.
+- Dynamic free-model discovery with filters such as tool support and context
+  length.
+- `doctor` and `apply-local` commands that diagnose and repair the actual Claude
+  Desktop third-party provider profile.
+- Local environment-based secret handling instead of hard-coding provider keys
+  into shared JSON config.
+
+The tradeoff is that you must run and maintain a local service. If those Claude
+Desktop-specific benefits do not matter, direct OpenRouter integration is
+simpler.
 
 ## Run Go Core
 
