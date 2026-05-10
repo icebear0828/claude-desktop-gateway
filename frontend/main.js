@@ -84,11 +84,14 @@ function appendCell(row, text) {
   row.appendChild(cell);
 }
 
-function appendButton(parent, label, className, onClick) {
+function appendButton(parent, key, className, onClick) {
   const button = document.createElement("button");
   button.className = className;
   button.type = "button";
-  button.textContent = label;
+  button.setAttribute("data-i18n", key);
+  button.textContent = t(key);
+  button.setAttribute("data-text-en", translate("en", key));
+  button.setAttribute("data-text-zh", translate("zh-CN", key));
   button.addEventListener("click", onClick);
   parent.appendChild(button);
 }
@@ -162,8 +165,8 @@ function renderRoutes(routes) {
 
     const actionCell = document.createElement("td");
     actionCell.className = "table-actions";
-    appendButton(actionCell, t("models.edit"), "button button-small button-secondary", () => populateRouteForm(route));
-    appendButton(actionCell, t("models.delete"), "button button-small button-destructive", () => deleteRoute(route.desktopID));
+    appendButton(actionCell, "models.edit", "button button-small button-secondary", () => populateRouteForm(route));
+    appendButton(actionCell, "models.delete", "button button-small button-destructive", () => deleteRoute(route.desktopID));
     row.appendChild(actionCell);
     elements.routesBody.appendChild(row);
   }
