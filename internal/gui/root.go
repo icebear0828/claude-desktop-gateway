@@ -16,10 +16,21 @@ func defaultRepoRoot() string {
 	if discovered := discoverRepoRoot(candidates); discovered != "" {
 		return discovered
 	}
+	if configDir := defaultConfigRoot(); configDir != "" {
+		return configDir
+	}
 	if len(candidates) > 0 {
 		return candidates[0]
 	}
 	return "."
+}
+
+func defaultConfigRoot() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, "claude-desktop-gateway")
 }
 
 func discoverRepoRoot(candidates []string) string {

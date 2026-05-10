@@ -114,11 +114,15 @@ func TestDashboardCombinesConfigGatewayAndClaudeDesktopState(t *testing.T) {
 
 func TestDashboardReturnsActionableErrorsWithoutFailingWholePage(t *testing.T) {
 	repoRoot := t.TempDir()
+	configPath := filepath.Join(repoRoot, "gateway.local.json")
+	if err := os.WriteFile(configPath, []byte("{bad json"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 	home := t.TempDir()
 	paths := claudedesktop.PathsForHome(home, "darwin")
 	service := gui.NewService(gui.Options{
 		RepoRoot:        repoRoot,
-		ConfigPath:      filepath.Join(repoRoot, "missing.json"),
+		ConfigPath:      configPath,
 		StateDir:        filepath.Join(repoRoot, ".local-gateway"),
 		HealthURL:       "http://gateway.test/health",
 		ExpectedBaseURL: "http://127.0.0.1:8787",

@@ -23,3 +23,20 @@ func TestDiscoverRepoRootWalksUpFromPackagedAppPath(t *testing.T) {
 		t.Fatalf("discoverRepoRoot = %q, want %q", got, repoRoot)
 	}
 }
+
+func TestDefaultRepoRootFallsBackToUserConfigDirWithoutRepoMarkers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Chdir(t.TempDir())
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir returned error: %v", err)
+	}
+
+	if got, want := defaultRepoRoot(), filepath.Join(configDir, "claude-desktop-gateway"); got != want {
+		t.Fatalf("defaultRepoRoot = %q, want %q", got, want)
+	}
+}

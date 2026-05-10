@@ -29,6 +29,9 @@ type SecretNameInput struct {
 }
 
 func (s *Service) Editor() (EditorState, error) {
+	if err := s.ensureDefaultConfig(); err != nil {
+		return EditorState{}, err
+	}
 	editable, err := config.LoadEditableFile(s.options.ConfigPath)
 	if err != nil {
 		return EditorState{}, err

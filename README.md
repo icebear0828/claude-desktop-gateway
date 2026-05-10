@@ -1,72 +1,38 @@
 # Claude Desktop Gateway
 
-Claude Desktop Gateway is a local provider gateway and configuration manager for
-Claude Desktop's third-party provider mode. It exposes Anthropic-compatible
-`/v1/models` and `/v1/messages` endpoints on localhost, maps Claude Desktop
-model IDs to upstream provider models, and forwards requests to OpenRouter first.
+中文 | [English](README.en.md)
 
-This project is not a general OpenRouter SDK or a hosted proxy. If you are
-building your own app, script, or service, call OpenRouter directly. Use this
-gateway when the client is Claude Desktop and you want a local, inspectable layer
-that handles Claude Desktop provider configuration, model aliases, free-model
-selection, fallback routes, and safe local secret handling.
+Claude Desktop Gateway 是面向 Claude Desktop 第三方 provider 模式的本地网关和配置管理工具。它在本机暴露 Anthropic 兼容的 `/v1/models` 与 `/v1/messages` 接口，把 Claude Desktop 里的模型 ID 映射到真实上游模型，并优先转发到 OpenRouter。
 
-## Why Not Call OpenRouter Directly?
+这个项目不是通用 OpenRouter SDK，也不是托管代理。如果你在写自己的应用、脚本或服务，直接调用 OpenRouter 更简单。这个网关适合 Claude Desktop 场景：需要稳定的 Claude 风格模型 ID、本地可检查配置、免费模型 fallback、动态免费模型选择，以及不把密钥写进共享 JSON。
 
-Direct OpenRouter calls are the right choice when you control the client code.
-The gateway exists for the Claude Desktop case, where the client expects a
-Claude-compatible provider endpoint and a stable list of Claude-shaped model IDs.
+## 快速开始
 
-Use this project when you need:
-
-- Claude Desktop to talk to OpenRouter through `http://127.0.0.1:8787`.
-- Stable Desktop model IDs such as `claude-free-coder` or
-  `claude-ring-2-6-1t-free`, while the gateway maps them to real upstream
-  OpenRouter model IDs.
-- Fallback across multiple OpenRouter routes when a free provider is rate
-  limited, overloaded, or blocked by provider spend limits.
-- Dynamic free-model discovery with filters such as tool support and context
-  length.
-- `doctor` and `apply-local` commands that diagnose and repair the actual Claude
-  Desktop third-party provider profile.
-- Local environment-based secret handling instead of hard-coding provider keys
-  into shared JSON config.
-
-The tradeoff is that you must run and maintain a local service. If those Claude
-Desktop-specific benefits do not matter, direct OpenRouter integration is
-simpler.
-
-## Run Go Core
-
-The Go core is the new MVP path for the desktop gateway. It keeps the same
-Anthropic-compatible HTTP surface while preparing for a Wails configuration GUI.
-
-For local Claude Desktop testing, use the repeatable script entrypoint:
+本地 Claude Desktop 测试推荐使用脚本入口：
 
 ```bash
 cp .env.local.example .env.local
 cp gateway.local.example.json gateway.local.json
-# Edit .env.local and replace OPENROUTER_API_KEY.
+# 编辑 .env.local，填入 OPENROUTER_API_KEY 和 CLAUDE_GATEWAY_API_KEY。
 ./scripts/run-local
 ```
 
-The script loads `.env.local`, uses `gateway.local.json`, requires
-`OPENROUTER_API_KEY` and `CLAUDE_GATEWAY_API_KEY`, and starts the gateway on
-`http://127.0.0.1:8787`. It prints only variable names and file paths, not
-secret values. To validate local setup without starting the server:
+脚本会加载 `.env.local`，使用 `gateway.local.json`，并在 `http://127.0.0.1:8787` 启动网关。输出只包含变量名和文件路径，不打印密钥值。
+
+只检查配置，不启动服务：
 
 ```bash
 ./scripts/run-local --dry-run
 ```
 
-Verify a running local gateway:
+检查正在运行的网关：
 
 ```bash
 curl http://127.0.0.1:8787/health
 curl -H "Authorization: Bearer $CLAUDE_GATEWAY_API_KEY" http://127.0.0.1:8787/v1/models
 ```
 
-For normal Claude Desktop use, run the gateway in the background:
+正常给 Claude Desktop 使用时，建议后台运行：
 
 ```bash
 scripts/local-gateway start
@@ -74,185 +40,34 @@ scripts/local-gateway status
 scripts/local-gateway stop
 ```
 
-`scripts/local-gateway start` validates `.env.local` and `gateway.local.json`,
-builds a local binary into `.local-gateway/`, starts it on
-`http://127.0.0.1:8787`, and writes logs to `.local-gateway/gateway.log`. Use
-`scripts/local-gateway restart` after changing config. The state directory is
-gitignored and must not contain committed artifacts.
+修改配置后使用：
 
-Diagnose the Claude Desktop 3P files that are actually active:
+```bash
+scripts/local-gateway restart
+```
+
+## Claude Desktop 配置
+
+诊断当前实际生效的 Claude Desktop 3P profile：
 
 ```bash
 GOCACHE=/private/tmp/go-build-cache go run ./cmd/claude-desktop-config doctor
 ```
 
-The doctor reads `Claude-3p/configLibrary/_meta.json`, opens the active
-profile from `appliedId`, checks flat gateway fields, and reports mismatched
-URLs such as stale LAN HTTP values. It never prints API key values.
-
-Repair or apply the local Claude Desktop 3P profile:
+应用或修复本地 Claude Desktop 3P profile：
 
 ```bash
 source .env.local
 GOCACHE=/private/tmp/go-build-cache go run ./cmd/claude-desktop-config apply-local
 ```
 
-`apply-local` writes a fixed profile in `Claude-3p/configLibrary/`, updates
-`_meta.json` so `appliedId` points to it, and sets both Claude root config files
-to `deploymentMode: "3p"`. It uses `CLAUDE_GATEWAY_API_KEY` from env for
-Claude Desktop's bearer token and redacts it from output. When
-`CLAUDE_GATEWAY_CONFIG` is set, it derives `inferenceModels` from the gateway
-routes. Use `--models` only for manual override or experiments. Preview without
-writing:
+只预览不写入：
 
 ```bash
 GOCACHE=/private/tmp/go-build-cache go run ./cmd/claude-desktop-config apply-local --dry-run
 ```
 
-Manual env-only startup is also supported:
-
-```bash
-export OPENROUTER_API_KEY="..."
-export CLAUDE_GATEWAY_API_KEY="local-client-key"
-go run ./cmd/gateway
-```
-
-Or use a local JSON config file. `gateway.local.json` is ignored by git:
-
-```bash
-export CLAUDE_GATEWAY_CONFIG=gateway.local.json
-go run ./cmd/gateway
-```
-
-Use `gateway.local.example.json` as the shape reference. JSON config must not
-contain secrets; use `apiKeyEnv` to reference an environment variable. Route
-keys are the Claude Desktop model IDs. `displayName` is optional metadata for
-`/v1/models` and the future GUI route editor.
-
-For local-only secrets without the script, copy `.env.local.example` to
-`.env.local`, edit it, and source it before running Go directly:
-
-```bash
-source .env.local
-export CLAUDE_GATEWAY_CONFIG=gateway.local.json
-go run ./cmd/gateway
-```
-
-## LAN or VPS Binding
-
-For another machine to reach the gateway, bind to all interfaces:
-
-```bash
-cp gateway.lan.example.json gateway.lan.json
-source .env.local
-export CLAUDE_GATEWAY_CONFIG=gateway.lan.json
-go run ./cmd/gateway
-```
-
-`gateway.lan.json` uses:
-
-```json
-{
-  "host": "0.0.0.0",
-  "port": 8787,
-  "gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
-  "tlsCertFile": "certs/gateway.crt",
-  "tlsKeyFile": "certs/gateway.key"
-}
-```
-
-When binding to any non-loopback host, the Go core requires
-`CLAUDE_GATEWAY_API_KEY`; startup fails without it. Claude Desktop's third-party
-gateway flow uses HTTPS, so LAN mode should run with TLS. From another LAN
-machine, set Claude Desktop's gateway URL to `https://<server-lan-ip>:8787`.
-
-For local LAN certificates, create a certificate with subject alternative names
-for the server IP and trust it on the Claude Desktop machine. Example with
-OpenSSL:
-
-```bash
-mkdir -p certs
-cat > certs/gateway-openssl.cnf <<'EOF'
-[req]
-distinguished_name=req_distinguished_name
-x509_extensions=v3_req
-prompt=no
-
-[req_distinguished_name]
-CN=192.168.10.6
-
-[v3_req]
-subjectAltName=@alt_names
-
-[alt_names]
-IP.1=192.168.10.6
-IP.2=127.0.0.1
-DNS.1=localhost
-EOF
-
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout certs/gateway.key \
-  -out certs/gateway.crt \
-  -config certs/gateway-openssl.cnf
-```
-
-Self-signed certificates must be trusted by the client OS before Claude Desktop
-will accept them.
-
-On macOS, run this manually in Terminal or import `certs/gateway.crt` through
-Keychain Access and set it to Always Trust:
-
-```bash
-security add-trusted-cert -d -r trustRoot \
-  -k ~/Library/Keychains/login.keychain-db \
-  certs/gateway.crt
-```
-
-For a public VPS, do not expose plain HTTP directly. Put the gateway behind
-HTTPS, firewall the port, and use a strong `CLAUDE_GATEWAY_API_KEY`.
-
-Run local Go tests:
-
-```bash
-GOCACHE=/private/tmp/go-build-cache go test ./...
-```
-
-## Run Desktop GUI
-
-The GUI MVP is a Wails desktop shell that reads the existing Go/config state
-instead of duplicating gateway protocol logic. It currently shows gateway
-health, listen URL, config errors, providers, route aliases, and Claude Desktop
-doctor status. Start/stop controls and route editing are next-phase work.
-
-Launch the desktop app directly:
-
-```bash
-GOCACHE=/private/tmp/go-build-cache go run .
-```
-
-Build a signed local macOS app bundle:
-
-```bash
-GOCACHE=/private/tmp/go-build-cache /Users/c/go/bin/wails build
-```
-
-If `wails` is on your PATH, `wails build` is equivalent. The UI follows the
-RawBlock direction: black/white, thick square borders, no shadows, no rounded
-corners, uppercase controls, and no decorative imagery.
-
-## Run TypeScript Reference
-
-The TypeScript service is kept as a behavior reference during the Go rewrite.
-
-```bash
-export OPENROUTER_API_KEY="..."
-export CLAUDE_GATEWAY_API_KEY="local-client-key"
-npm run dev
-```
-
-Default URL: `http://127.0.0.1:8787`
-
-## Claude Desktop
+Claude Desktop profile 的核心字段形态：
 
 ```json
 {
@@ -270,10 +85,11 @@ Default URL: `http://127.0.0.1:8787`
 }
 ```
 
-## Model Routes
+`apply-local` 会把 `CLAUDE_GATEWAY_API_KEY` 写入 Claude Desktop profile 供本地鉴权使用，输出会脱敏。设置 `CLAUDE_GATEWAY_CONFIG` 时，`inferenceModels` 会从网关路由推导。
 
-The JSON route shape keeps Claude Desktop naming separate from the real
-upstream model:
+## 模型路由
+
+`gateway.local.json` 把 Claude Desktop 模型名和真实上游模型分开。默认 Ring 路由：
 
 ```json
 {
@@ -300,125 +116,119 @@ upstream model:
           "ttlSeconds": 300
         }
       }
-    ],
-    "claude-free-agent": [
-      {
-        "provider": "openrouter",
-        "model": "openrouter/free",
-        "displayName": "OpenRouter Free Agent Auto",
-        "dynamicFreeModels": {
-          "enabled": true,
-          "requiredParameters": ["tools", "tool_choice"],
-          "minContextLength": 32768,
-          "maxModels": 4,
-          "catalogCacheTTLSeconds": 900,
-          "fallback": [
-            "inclusionai/ring-2.6-1t:free",
-            "qwen/qwen3-coder:free",
-            "z-ai/glm-4.5-air:free",
-            "openai/gpt-oss-120b:free",
-            "openrouter/free"
-          ]
-        },
-        "cache": {
-          "enabled": true,
-          "ttlSeconds": 300
-        }
-      }
     ]
   }
 }
 ```
 
-The route key is what Claude Desktop sends back to `/v1/messages`; `model` is
-the provider model sent upstream. If a GUI adds a route from an upstream model,
-the default desktop ID is the upstream model prefixed with `claude-`, unless it
-already starts with `claude-` or `anthropic/claude-`. The only custom ID verified
-with Claude Desktop so far is `claude-inclusionai/ring-2.6-1t:free`.
+路由 key 是 Claude Desktop 发送回 `/v1/messages` 的模型 ID；`model` 是发送到 provider 的真实上游模型。
 
-`dynamicFreeModels` turns a route into a runtime free-model selector. The
-gateway fetches OpenRouter's `/models` catalog, keeps only zero-price models,
-filters by `requiredParameters` such as `tools` and `tool_choice`, and caches
-the catalog for `catalogCacheTTLSeconds`. Hardcoded entries under `fallback`
-are used only when catalog discovery returns no usable model or when dynamic
-routes hit retryable upstream failures.
-
-`model: "openrouter/free"` is still useful for `claude-free-auto`: it delegates
-model selection to OpenRouter's free router. The example config exposes both
-that direct auto route and task-oriented dynamic aliases:
+默认别名：
 
 ```text
 claude-ring-2-6-1t-free -> dedicated Ring 2.6 1T route
-claude-free-auto        -> OpenRouter's free router
-claude-free-agent       -> dynamic free tools-capable models, then fallback list
-claude-free-coder       -> dynamic free tools-capable models, then coding fallback list
-claude-free-fast        -> dynamic free general models, then fast fallback list
+claude-free-auto        -> OpenRouter free router
+claude-free-agent       -> 动态 tools-capable 免费模型，然后 fallback list
+claude-free-coder       -> 动态 tools-capable 免费模型，然后 coding fallback list
+claude-free-fast        -> 动态通用免费模型，然后 fast fallback list
 ```
 
-`cache.enabled` sends OpenRouter response-cache headers on upstream calls. The
-Anthropic Messages profile also preserves Anthropic `cache_control` blocks, so
-Claude Desktop prompt-cache hints are not stripped. Cache status headers such as
-`X-OpenRouter-Cache-Status` are forwarded back to the client when OpenRouter
-returns them.
+`dynamicFreeModels` 会拉取 OpenRouter `/models` catalog，只保留零价格模型，并按 `requiredParameters`、上下文长度等条件过滤。`fallback` 只在 catalog 没有可用模型或动态路由遇到可重试上游错误时使用。
 
-Use `profile: "anthropic-messages"` for OpenRouter's Anthropic Messages
-endpoint. In this mode the gateway rewrites only the model ID and preserves
-Anthropic-native request fields such as `tools`, `tool_choice`, `tool_result`,
-`cache_control`, and `thinking`. Use `profile: "openai-chat"` only for
-OpenAI-compatible providers that do not expose an Anthropic Messages endpoint.
+`cache.enabled` 会在上游请求中发送 OpenRouter response-cache headers。`anthropic-messages` profile 会保留 Anthropic 原生 `cache_control` block，因此 Claude Desktop 的 prompt-cache hint 不会被剥离。OpenRouter 返回 `X-OpenRouter-Cache-Status` 等 cache header 时，网关会转发给客户端。
 
-Each route array is tried in order. The gateway falls back to the next route on
-upstream 402 provider spend-limit errors, 429, 5xx, or transport failures, but
-it does not hide authentication or validation errors such as 400, 401, or 403.
+OpenRouter 的 Anthropic Messages endpoint 使用：
 
-Provider `capabilities` default to streaming and tools enabled. Set
-`"streaming": false` or `"tools": false` for providers that cannot support
-those request shapes; the gateway rejects unsupported requests before calling
-upstream.
-
-Without a JSON config, the env-only fallback keeps these Claude-shaped aliases
-mapped to OpenRouter's current free 1T model:
-
-```text
-claude-ring-2-6-1t-free -> inclusionai/ring-2.6-1t:free
-claude-opus-4-7         -> inclusionai/ring-2.6-1t:free
-claude-opus-4.7         -> inclusionai/ring-2.6-1t:free
-claude-sonnet-4-6       -> inclusionai/ring-2.6-1t:free
-claude-sonnet-4.6       -> inclusionai/ring-2.6-1t:free
-claude-haiku-4-5        -> inclusionai/ring-2.6-1t:free
-claude-haiku-4.5        -> inclusionai/ring-2.6-1t:free
+```json
+{ "profile": "anthropic-messages" }
 ```
 
-Override with JSON:
+此模式下，网关只重写模型 ID，保留 Anthropic 原生字段，例如 `tools`、`tool_choice`、`tool_result`、`cache_control` 和 `thinking`。只有 provider 不提供 Anthropic Messages endpoint 时，才使用 `profile: "openai-chat"`。
 
-```bash
-export CLAUDE_MODEL_ALIASES='{"claude-opus-4-7":"provider/model-id"}'
-```
+## 环境变量
 
-Or comma-separated pairs:
-
-```bash
-export CLAUDE_MODEL_ALIASES='claude-opus-4-7=provider/model-id,claude-haiku-4-5=provider/other-model-id'
-```
-
-## Environment
-
-| Variable | Default | Purpose |
+| 变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | required | OpenRouter upstream API key |
-| `CLAUDE_GATEWAY_API_KEY` | none | Optional client key required by Claude Desktop |
-| `CLAUDE_GATEWAY_DEFAULT_MODEL` | `inclusionai/ring-2.6-1t:free` | Default target for built-in aliases |
-| `CLAUDE_MODEL_ALIASES` | built-ins | JSON object or comma-separated alias map |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter-compatible base URL |
-| `OPENROUTER_REFERRER` | none | Optional OpenRouter attribution header |
-| `OPENROUTER_TITLE` | `Codex Proxy Claude Gateway` | Optional OpenRouter attribution header |
-| `HOST` | `127.0.0.1` | Listen host |
-| `PORT` | `8787` | Listen port |
-| `CLAUDE_GATEWAY_CONFIG` | none | Optional non-secret JSON config file path, for example `gateway.local.json` |
+| `OPENROUTER_API_KEY` | 必填 | OpenRouter 上游 API key |
+| `CLAUDE_GATEWAY_API_KEY` | 无 | Claude Desktop 访问网关的客户端 key |
+| `CLAUDE_GATEWAY_DEFAULT_MODEL` | `inclusionai/ring-2.6-1t:free` | 内置 alias 的默认目标模型 |
+| `CLAUDE_MODEL_ALIASES` | 内置 alias | JSON object 或逗号分隔 alias map |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter 兼容 base URL |
+| `OPENROUTER_REFERRER` | 无 | 可选 OpenRouter attribution header |
+| `OPENROUTER_TITLE` | `Codex Proxy Claude Gateway` | 可选 OpenRouter attribution header |
+| `HOST` | `127.0.0.1` | 监听 host |
+| `PORT` | `8787` | 监听端口 |
+| `CLAUDE_GATEWAY_CONFIG` | 无 | 可选非密钥 JSON 配置文件路径，例如 `gateway.local.json` |
 
-## Real OpenRouter Test
+## LAN 或 VPS
 
-After exporting `OPENROUTER_API_KEY`, run:
+让其他机器访问网关时，绑定到所有网卡：
+
+```bash
+cp gateway.lan.example.json gateway.lan.json
+source .env.local
+export CLAUDE_GATEWAY_CONFIG=gateway.lan.json
+go run ./cmd/gateway
+```
+
+绑定到任何非 loopback host 时，Go core 要求设置 `CLAUDE_GATEWAY_API_KEY`，否则启动失败。Claude Desktop 的第三方 gateway 流程应使用 HTTPS，因此 LAN 模式建议启用 TLS。公网 VPS 不要直接暴露明文 HTTP；应放在 HTTPS 后面，配合防火墙，并使用强 `CLAUDE_GATEWAY_API_KEY`。
+
+## Desktop GUI
+
+GUI 是 Wails 桌面应用，读取现有 Go/config 状态，不重复实现网关协议逻辑。目前展示 gateway health、listen URL、配置错误、providers、route aliases 和 Claude Desktop doctor 状态。
+
+直接启动：
+
+```bash
+GOCACHE=/private/tmp/go-build-cache go run .
+```
+
+构建本地 macOS app：
+
+```bash
+GOCACHE=/private/tmp/go-build-cache /Users/c/go/bin/wails build
+```
+
+发布版 GUI 找不到源码仓库时，会使用系统用户配置目录并自动创建默认 `gateway.local.json`，配置文件里只引用 env var，不写入密钥。
+
+## 跨平台发布
+
+桌面 prerelease 通过 Git tag 发布，例如 `v0.1.0-pre.1`。GitHub Actions 会在原生 runner 上构建 unsigned Wails GUI，并上传：
+
+- `claude-desktop-gateway-<tag>-macos-arm64.zip`
+- `claude-desktop-gateway-<tag>-macos-amd64.zip`
+- `claude-desktop-gateway-<tag>-windows-amd64.zip`
+- `claude-desktop-gateway-<tag>-linux-amd64.tar.gz`
+
+这些是未签名、未公证的预览构建：
+
+- macOS 首次打开可能需要在 Privacy & Security 里手动允许。
+- Windows 可能出现 SmartScreen 提示。
+- Linux 需要 GTK 3 和 WebKitGTK 4.1 runtime libraries。
+
+## TypeScript 参考实现
+
+TypeScript 服务保留为 Go 重写期间的行为参考：
+
+```bash
+export OPENROUTER_API_KEY="..."
+export CLAUDE_GATEWAY_API_KEY="local-client-key"
+npm run dev
+```
+
+默认地址：`http://127.0.0.1:8787`
+
+## 测试
+
+本地测试：
+
+```bash
+GOCACHE=/private/tmp/go-build-cache go test ./...
+npm test
+npm run build
+```
+
+真实 OpenRouter 三连测试需要先导出 `OPENROUTER_API_KEY`：
 
 ```bash
 GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run TestRealOpenRouterCompletesThreeSequentialCalls -count=1
@@ -426,11 +236,4 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run TestRealOpen
 GOCACHE=/private/tmp/go-build-cache go test ./internal/gateway -run 'TestRealOpenRouterAnthropicMessages(Streams|Tools)ThreeSequentialCalls' -count=1
 ```
 
-Each test performs three sequential calls against `inclusionai/ring-2.6-1t:free`.
-The free upstream provider may return 429; use route fallback or a steadier
-upstream model before marking Claude Desktop compatibility complete.
-
-## Claude Desktop E2E
-
-See `docs/e2e/claude-desktop.md` for the full Claude Desktop configuration and
-manual end-to-end checklist.
+每个真实测试都会对 `inclusionai/ring-2.6-1t:free` 连续调用 3 次。免费上游 provider 可能返回 429；在标记 Claude Desktop 兼容性完成前，应使用 route fallback 或更稳定的上游模型复测。

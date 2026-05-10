@@ -41,6 +41,34 @@ func TestEditorLoadsEditableConfigAndSecretStatus(t *testing.T) {
 	}
 }
 
+func TestEditorCreatesDefaultConfigWhenMissing(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := filepath.Join(repoRoot, "gateway.local.json")
+	envPath := filepath.Join(repoRoot, ".env.local")
+	service := gui.NewService(gui.Options{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		EnvPath:    envPath,
+	})
+
+	state, err := service.Editor()
+	if err != nil {
+		t.Fatalf("Editor returned error: %v", err)
+	}
+	if state.Config.Path != configPath {
+		t.Fatalf("config path = %q, want %q", state.Config.Path, configPath)
+	}
+	if len(state.Config.Providers) != 1 || state.Config.Providers[0].Name != "openrouter" {
+		t.Fatalf("providers = %#v", state.Config.Providers)
+	}
+	if len(state.Config.Routes) == 0 || state.Config.Routes[0].DesktopID != "claude-free-agent" {
+		t.Fatalf("routes = %#v", state.Config.Routes)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("default config was not written: %v", err)
+	}
+}
+
 func TestSaveConfigUsesServiceConfigPathAndRejectsUnknownProvider(t *testing.T) {
 	repoRoot := t.TempDir()
 	configPath := writeEditorConfig(t, repoRoot)

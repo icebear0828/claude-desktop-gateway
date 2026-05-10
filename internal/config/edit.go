@@ -41,6 +41,98 @@ type EditableRoute struct {
 	Cache             RouteCache        `json:"cache"`
 }
 
+func DefaultEditableFile(path string) EditableFile {
+	toolsSelector := DynamicFreeModels{
+		Enabled:                true,
+		RequiredParameters:     []string{"tools", "tool_choice"},
+		MinContextLength:       32768,
+		MaxModels:              4,
+		CatalogCacheTTLSeconds: 900,
+		Fallback: []string{
+			DefaultAliasModel,
+			"qwen/qwen3-coder:free",
+			"z-ai/glm-4.5-air:free",
+			"openai/gpt-oss-120b:free",
+			"openrouter/free",
+		},
+	}
+	coderSelector := toolsSelector
+	coderSelector.Fallback = []string{
+		"qwen/qwen3-coder:free",
+		DefaultAliasModel,
+		"poolside/laguna-m.1:free",
+		"baidu/cobuddy:free",
+		"openrouter/free",
+	}
+	fastSelector := DynamicFreeModels{
+		Enabled:                true,
+		MinContextLength:       8192,
+		MaxModels:              3,
+		CatalogCacheTTLSeconds: 900,
+		Fallback: []string{
+			"z-ai/glm-4.5-air:free",
+			"openai/gpt-oss-20b:free",
+			"meta-llama/llama-3.3-70b-instruct:free",
+			"openrouter/free",
+		},
+	}
+	cache := RouteCache{Enabled: true, TTLSeconds: 300}
+	return EditableFile{
+		Path:             strings.TrimSpace(path),
+		Host:             DefaultHost,
+		Port:             DefaultPort,
+		GatewayAPIKeyEnv: "CLAUDE_GATEWAY_API_KEY",
+		Providers: []EditableProvider{{
+			Name:         DefaultOpenRouterName,
+			Profile:      "anthropic-messages",
+			BaseURL:      DefaultOpenRouterURL,
+			APIKeyEnv:    "OPENROUTER_API_KEY",
+			Title:        DefaultTitle,
+			Capabilities: DefaultProviderCapabilities(),
+		}},
+		Routes: []EditableRoute{
+			{
+				DesktopID:         "claude-free-agent",
+				Provider:          DefaultOpenRouterName,
+				UpstreamModel:     "openrouter/free",
+				DisplayName:       "OpenRouter Free Agent Auto",
+				DynamicFreeModels: toolsSelector,
+				Cache:             cache,
+			},
+			{
+				DesktopID:     "claude-free-auto",
+				Provider:      DefaultOpenRouterName,
+				UpstreamModel: "openrouter/free",
+				DisplayName:   "OpenRouter Free Auto",
+				Cache:         cache,
+			},
+			{
+				DesktopID:         "claude-free-coder",
+				Provider:          DefaultOpenRouterName,
+				UpstreamModel:     "openrouter/free",
+				DisplayName:       "OpenRouter Free Coder Auto",
+				DynamicFreeModels: coderSelector,
+				Cache:             cache,
+			},
+			{
+				DesktopID:         "claude-free-fast",
+				Provider:          DefaultOpenRouterName,
+				UpstreamModel:     "openrouter/free",
+				DisplayName:       "OpenRouter Free Fast Auto",
+				DynamicFreeModels: fastSelector,
+				Cache:             cache,
+			},
+			{
+				DesktopID:     "claude-ring-2-6-1t-free",
+				Provider:      DefaultOpenRouterName,
+				UpstreamModel: DefaultAliasModel,
+				DisplayName:   "OpenRouter Ring 2.6 1T Free",
+				Cache:         cache,
+			},
+		},
+	}
+}
+
 func NewEditableRoute(provider string, upstreamModel string, displayName string) EditableRoute {
 	desktopID := DefaultDesktopModelID(upstreamModel)
 	trimmedDisplayName := strings.TrimSpace(displayName)

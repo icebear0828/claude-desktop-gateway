@@ -1,0 +1,183 @@
+name: Release Desktop Apps
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish, for example v0.1.0-pre.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Resolve tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+
+      - name: Create or update prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          Unsigned cross-platform desktop preview for Claude Desktop Gateway.
+
+          Assets:
+          - macOS arm64 app zip
+          - macOS amd64 app zip
+          - Windows amd64 exe zip
+          - Linux amd64 tar.gz
+
+          Notes:
+          - Builds are unsigned and not notarized.
+          - macOS may require approving the app in Privacy & Security before first launch.
+          - Windows may show SmartScreen because the binary is unsigned.
+          - Linux requires GTK 3 and WebKitGTK 4.1 runtime libraries.
+          EOF
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --title "${TAG}" --notes-file /tmp/release-notes.md --prerelease
+          else
+            gh release create "${TAG}" --title "${TAG}" --notes-file /tmp/release-notes.md --prerelease
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-15
+            platform: darwin/arm64
+            asset: macos-arm64
+            package: macos
+            tags: ""
+            webview2: ""
+          - name: macOS amd64
+            os: macos-15-intel
+            platform: darwin/amd64
+            asset: macos-amd64
+            package: macos
+            tags: ""
+            webview2: ""
+          - name: Windows amd64
+            os: windows-latest
+            platform: windows/amd64
+            asset: windows-amd64
+            package: windows
+            tags: ""
+            webview2: browser
+          - name: Linux amd64
+            os: ubuntu-24.04
+            platform: linux/amd64
+            asset: linux-amd64
+            package: linux
+            tags: webkit2_41
+            webview2: ""
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Linux Wails dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+          wails version
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run Go tests
+        shell: bash
+        run: go test ./...
+
+      - name: Run TypeScript tests
+        run: npm test
+
+      - name: Build TypeScript reference
+        run: npm run build
+
+      - name: Build Wails app
+        shell: bash
+        run: |
+          args=(-m -clean -platform "${{ matrix.platform }}" -trimpath)
+          if [ -n "${{ matrix.tags }}" ]; then
+            args+=(-tags "${{ matrix.tags }}")
+          fi
+          if [ -n "${{ matrix.webview2 }}" ]; then
+            args+=(-webview2 "${{ matrix.webview2 }}")
+          fi
+          wails build "${args[@]}"
+
+      - name: Package app
+        shell: bash
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          mkdir -p dist
+          base="claude-desktop-gateway-${TAG}-${{ matrix.asset }}"
+          case "${{ matrix.package }}" in
+            macos)
+              ditto -c -k --sequesterRsrc --keepParent \
+                build/bin/claude-desktop-gateway.app \
+                "dist/${base}.zip"
+              ;;
+            windows)
+              7z a "dist/${base}.zip" "./build/bin/claude-desktop-gateway.exe"
+              ;;
+            linux)
+              tar -czf "dist/${base}.tar.gz" -C build/bin claude-desktop-gateway
+              ;;
+          esac
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        shell: bash
+        run: gh release upload "${TAG}" dist/* --clobber

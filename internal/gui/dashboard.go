@@ -83,13 +83,17 @@ func (s *Service) Dashboard(ctx context.Context) Dashboard {
 		GeneratedAtISO: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	summary, err := config.InspectFile(s.options.ConfigPath)
-	if err != nil {
+	if err := s.ensureDefaultConfig(); err != nil {
 		dashboard.ConfigError = err.Error()
 	} else {
-		dashboard.ListenURL = listenURL(summary)
-		dashboard.Providers = summary.Providers
-		dashboard.Routes = summary.Routes
+		summary, err := config.InspectFile(s.options.ConfigPath)
+		if err != nil {
+			dashboard.ConfigError = err.Error()
+		} else {
+			dashboard.ListenURL = listenURL(summary)
+			dashboard.Providers = summary.Providers
+			dashboard.Routes = summary.Routes
+		}
 	}
 
 	dashboard.Gateway = s.gatewayStatus(ctx)
@@ -121,6 +125,18 @@ func normalizeOptions(options Options) Options {
 		options.ExpectedBaseURL = "http://127.0.0.1:8787"
 	}
 	return options
+}
+
+func (s *Service) ensureDefaultConfig() error {
+	if _, err := os.Stat(s.options.ConfigPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat config file: %w", err)
+	}
+	if _, err := config.SaveEditableFile(s.options.ConfigPath, config.DefaultEditableFile(s.options.ConfigPath)); err != nil {
+		return fmt.Errorf("create default config file: %w", err)
+	}
+	return nil
 }
 
 func listenURL(summary config.FileSummary) string {
