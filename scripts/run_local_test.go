@@ -149,7 +149,7 @@ func TestLocalGatewayStatusReportsManagedPID(t *testing.T) {
 
 	stateDir := t.TempDir()
 	pidPath := filepath.Join(stateDir, "gateway.pid")
-	pid := strconv.Itoa(os.Getpid())
+	pid := managedPIDForStatusTest(t)
 	if err := os.WriteFile(pidPath, []byte(pid+"\n"), 0o600); err != nil {
 		t.Fatalf("write pid file: %v", err)
 	}
@@ -193,4 +193,22 @@ func scriptCommand(name string, args ...string) *exec.Cmd {
 		return exec.Command("bash", append([]string{scriptPath}, args...)...)
 	}
 	return exec.Command(scriptPath, args...)
+}
+
+func managedPIDForStatusTest(t *testing.T) string {
+	t.Helper()
+
+	if runtime.GOOS != "windows" {
+		return strconv.Itoa(os.Getpid())
+	}
+
+	cmd := exec.Command("bash", "-c", "sleep 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start bash sleep process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	return strconv.Itoa(cmd.Process.Pid)
 }
