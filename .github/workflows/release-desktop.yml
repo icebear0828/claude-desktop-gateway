@@ -159,19 +159,19 @@ jobs:
         env:
           TAG: ${{ needs.release.outputs.tag }}
         run: |
-          mkdir -p dist
+          mkdir -p release-dist
           base="claude-desktop-gateway-${TAG}-${{ matrix.asset }}"
           case "${{ matrix.package }}" in
             macos)
               ditto -c -k --sequesterRsrc --keepParent \
                 build/bin/claude-desktop-gateway.app \
-                "dist/${base}.zip"
+                "release-dist/${base}.zip"
               ;;
             windows)
-              7z a "dist/${base}.zip" "./build/bin/claude-desktop-gateway.exe"
+              7z a "release-dist/${base}.zip" "./build/bin/claude-desktop-gateway.exe"
               ;;
             linux)
-              tar -czf "dist/${base}.tar.gz" -C build/bin claude-desktop-gateway
+              tar -czf "release-dist/${base}.tar.gz" -C build/bin claude-desktop-gateway
               ;;
           esac
 
@@ -180,4 +180,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release.outputs.tag }}
         shell: bash
-        run: gh release upload "${TAG}" dist/* --clobber
+        run: gh release upload "${TAG}" release-dist/* --clobber
