@@ -17,6 +17,8 @@ type upstreamAdapter interface {
 
 type upstreamMessageResult interface {
 	WriteAnthropic(w http.ResponseWriter)
+	StatusCode() int
+	Close() error
 }
 
 type upstreamRequestError struct {
@@ -54,6 +56,7 @@ func (a openAIAdapter) Complete(ctx context.Context, provider config.Provider, r
 		return nil, upstreamRequestError{Status: http.StatusInternalServerError, Kind: apiError, Message: "Failed to create upstream request"}
 	}
 	setOpenAIHeaders(upstreamReq.Header, provider)
+	setRouteCacheHeaders(upstreamReq.Header, route.Cache)
 
 	upstream, err := a.client.Do(upstreamReq)
 	if err != nil {
@@ -63,13 +66,14 @@ func (a openAIAdapter) Complete(ctx context.Context, provider config.Provider, r
 }
 
 func (r openAIResult) WriteAnthropic(w http.ResponseWriter) {
-	defer r.response.Body.Close()
+	defer r.Close()
 
 	if r.response.StatusCode < 200 || r.response.StatusCode > 299 {
 		writeAnthropicError(w, statusCode(r.response.StatusCode), errorTypeForStatus(r.response.StatusCode), upstreamError(r.response))
 		return
 	}
 
+	copyOpenRouterCacheHeaders(w.Header(), r.response.Header)
 	if r.stream {
 		streamOpenAIToAnthropic(w, r.response, r.requestedModel)
 		return
@@ -81,4 +85,18 @@ func (r openAIResult) WriteAnthropic(w http.ResponseWriter) {
 		return
 	}
 	writeJSON(w, http.StatusOK, anthropicCompletionResponse(completion, r.requestedModel))
+}
+
+func (r openAIResult) StatusCode() int {
+	if r.response == nil {
+		return 0
+	}
+	return r.response.StatusCode
+}
+
+func (r openAIResult) Close() error {
+	if r.response == nil || r.response.Body == nil {
+		return nil
+	}
+	return r.response.Body.Close()
 }

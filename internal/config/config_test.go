@@ -25,11 +25,14 @@ func TestLoadFromEnvDefaultsOpenRouterRoutesToRingFree(t *testing.T) {
 		t.Fatalf("Port = %d, want 8787", cfg.Port)
 	}
 	provider := cfg.Providers[config.DefaultOpenRouterName]
+	if provider.Profile != "anthropic-messages" {
+		t.Fatalf("provider.Profile = %q, want anthropic-messages", provider.Profile)
+	}
 	if !provider.Capabilities.Streaming || !provider.Capabilities.Tools {
 		t.Fatalf("default capabilities = %#v", provider.Capabilities)
 	}
 
-	for _, alias := range []string{"claude-opus-4-7", "claude-opus-4.7", "claude-sonnet-4-6", "claude-sonnet-4.6", "claude-haiku-4-5", "claude-haiku-4.5"} {
+	for _, alias := range []string{"claude-ring-2-6-1t-free", "claude-opus-4-7", "claude-opus-4.7", "claude-sonnet-4-6", "claude-sonnet-4.6", "claude-haiku-4-5", "claude-haiku-4.5"} {
 		route, ok := cfg.ResolveRoute(alias)
 		if !ok {
 			t.Fatalf("ResolveRoute(%q) returned false", alias)
@@ -275,6 +278,84 @@ func TestLoadFromFileBuildsDesktopModelsWithDisplayNames(t *testing.T) {
 	}
 	if strings.Join(cfg.DesktopModelIDs(), ",") != "claude-inclusionai/ring-2.6-1t:free" {
 		t.Fatalf("DesktopModelIDs = %#v", cfg.DesktopModelIDs())
+	}
+}
+
+func TestLoadFromFileParsesDynamicFreeModelRouteAndCache(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gateway.local.json")
+	body := `{
+		"gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
+		"providers": {
+			"openrouter": {
+				"profile": "anthropic-messages",
+				"baseUrl": "https://openrouter.ai/api/v1",
+				"apiKeyEnv": "OPENROUTER_API_KEY"
+			}
+		},
+		"routes": {
+			"claude-free-agent": [
+				{
+					"provider": "openrouter",
+					"model": "openrouter/free",
+					"displayName": "OpenRouter Free Agent Auto",
+					"dynamicFreeModels": {
+						"enabled": true,
+						"requiredParameters": ["tools", "tool_choice"],
+						"minContextLength": 32768,
+						"maxModels": 4,
+						"catalogCacheTTLSeconds": 900,
+						"fallback": [
+							"inclusionai/ring-2.6-1t:free",
+							"qwen/qwen3-coder:free",
+							"openrouter/free"
+						]
+					},
+					"cache": {
+						"enabled": true,
+						"ttlSeconds": 300
+					}
+				}
+			]
+		}
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := config.LoadFromFile(path, map[string]string{
+		"OPENROUTER_API_KEY":     "or-env-key",
+		"CLAUDE_GATEWAY_API_KEY": "client-env-key",
+	})
+	if err != nil {
+		t.Fatalf("LoadFromFile returned error: %v", err)
+	}
+
+	routes, ok := cfg.ResolveRoutes("claude-free-agent")
+	if !ok || len(routes) != 1 {
+		t.Fatalf("ResolveRoutes returned %v, %#v", ok, routes)
+	}
+	route := routes[0]
+	if !route.DynamicFreeModels.Enabled {
+		t.Fatalf("DynamicFreeModels.Enabled = false")
+	}
+	if strings.Join(route.DynamicFreeModels.RequiredParameters, ",") != "tools,tool_choice" {
+		t.Fatalf("RequiredParameters = %#v", route.DynamicFreeModels.RequiredParameters)
+	}
+	if route.DynamicFreeModels.MinContextLength != 32768 {
+		t.Fatalf("MinContextLength = %d", route.DynamicFreeModels.MinContextLength)
+	}
+	if route.DynamicFreeModels.MaxModels != 4 {
+		t.Fatalf("MaxModels = %d", route.DynamicFreeModels.MaxModels)
+	}
+	if route.DynamicFreeModels.CatalogCacheTTLSeconds != 900 {
+		t.Fatalf("CatalogCacheTTLSeconds = %d", route.DynamicFreeModels.CatalogCacheTTLSeconds)
+	}
+	if strings.Join(route.DynamicFreeModels.Fallback, ",") != "inclusionai/ring-2.6-1t:free,qwen/qwen3-coder:free,openrouter/free" {
+		t.Fatalf("Fallback = %#v", route.DynamicFreeModels.Fallback)
+	}
+	if !route.Cache.Enabled || route.Cache.TTLSeconds != 300 {
+		t.Fatalf("Cache = %#v", route.Cache)
 	}
 }
 

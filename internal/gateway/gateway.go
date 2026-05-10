@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,8 +18,10 @@ import (
 )
 
 type Gateway struct {
-	cfg    config.Config
-	openAI upstreamAdapter
+	cfg       config.Config
+	openAI    upstreamAdapter
+	anthropic upstreamAdapter
+	catalog   *openRouterModelCatalog
 }
 
 type anthropicErrorType string
@@ -51,13 +54,19 @@ type anthropicRequest struct {
 	StopSequences []string           `json:"stop_sequences"`
 	Tools         []json.RawMessage  `json:"tools"`
 	ToolChoice    json.RawMessage    `json:"tool_choice"`
+	Raw           map[string]json.RawMessage
 }
 
 func New(cfg config.Config, client *http.Client) http.Handler {
 	if client == nil {
 		client = &http.Client{Timeout: defaultRequestTimout}
 	}
-	return &Gateway{cfg: cfg, openAI: openAIAdapter{client: client}}
+	return &Gateway{
+		cfg:       cfg,
+		openAI:    openAIAdapter{client: client},
+		anthropic: anthropicAdapter{client: client},
+		catalog:   newOpenRouterModelCatalog(client),
+	}
 }
 
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -115,23 +124,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, ok := g.cfg.ResolveRoute(req.Model)
+	routes, ok := g.cfg.ResolveRoutes(req.Model)
 	if !ok {
 		writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, "model is not configured")
-		return
-	}
-	provider, ok := g.cfg.ProviderFor(route)
-	if !ok {
-		writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, "provider is not configured")
-		return
-	}
-	adapter, ok := g.adapterFor(provider)
-	if !ok {
-		writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, "provider profile is not supported")
-		return
-	}
-	if message := unsupportedProviderCapability(provider, req); message != "" {
-		writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, message)
 		return
 	}
 
@@ -142,23 +137,58 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 	}
 
-	result, err := adapter.Complete(ctx, provider, route, req)
-	if err != nil {
-		var requestErr upstreamRequestError
-		if errors.As(err, &requestErr) {
-			writeAnthropicError(w, requestErr.Status, requestErr.Kind, requestErr.Message)
+	for i := 0; i < len(routes); i++ {
+		route := routes[i]
+		provider, ok := g.cfg.ProviderFor(route)
+		if !ok {
+			writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, "provider is not configured")
 			return
 		}
-		writeAnthropicError(w, http.StatusBadGateway, apiError, "OpenRouter request failed")
+		adapter, ok := g.adapterFor(provider)
+		if !ok {
+			writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, "provider profile is not supported")
+			return
+		}
+		if message := unsupportedProviderCapability(provider, req); message != "" {
+			writeAnthropicError(w, http.StatusBadRequest, invalidRequestError, message)
+			return
+		}
+		if route.DynamicFreeModels.Enabled {
+			routes = replaceRoute(routes, i, g.dynamicFreeRoutes(ctx, provider, route, req))
+			i--
+			continue
+		}
+
+		result, err := adapter.Complete(ctx, provider, route, req)
+		if err != nil {
+			if canFallbackError(err) && hasNextRoute(routes, i) {
+				continue
+			}
+			var requestErr upstreamRequestError
+			if errors.As(err, &requestErr) {
+				writeAnthropicError(w, requestErr.Status, requestErr.Kind, requestErr.Message)
+				return
+			}
+			writeAnthropicError(w, http.StatusBadGateway, apiError, "OpenRouter request failed")
+			return
+		}
+		if canFallbackStatus(result.StatusCode()) && hasNextRoute(routes, i) {
+			_ = result.Close()
+			continue
+		}
+		result.WriteAnthropic(w)
 		return
 	}
-	result.WriteAnthropic(w)
+
+	writeAnthropicError(w, http.StatusBadGateway, apiError, "OpenRouter request failed")
 }
 
 func (g *Gateway) adapterFor(provider config.Provider) (upstreamAdapter, bool) {
 	switch provider.Profile {
 	case "", "openai-chat":
 		return g.openAI, true
+	case "anthropic-messages":
+		return g.anthropic, true
 	default:
 		return nil, false
 	}
@@ -175,12 +205,37 @@ func unsupportedProviderCapability(provider config.Provider, req anthropicReques
 	return ""
 }
 
+func hasNextRoute(routes []config.Route, index int) bool {
+	return index+1 < len(routes)
+}
+
+func canFallbackError(err error) bool {
+	var requestErr upstreamRequestError
+	if errors.As(err, &requestErr) {
+		return canFallbackStatus(requestErr.Status)
+	}
+	return true
+}
+
+func canFallbackStatus(status int) bool {
+	return status == http.StatusPaymentRequired || status == http.StatusTooManyRequests || status >= 500
+}
+
 func parseAnthropicRequest(body io.Reader) (anthropicRequest, string) {
-	var req anthropicRequest
+	var raw map[string]json.RawMessage
 	decoder := json.NewDecoder(body)
-	if err := decoder.Decode(&req); err != nil {
+	if err := decoder.Decode(&raw); err != nil {
 		return anthropicRequest{}, "Invalid JSON in request body"
 	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return anthropicRequest{}, "Invalid JSON in request body"
+	}
+	var req anthropicRequest
+	if err := json.Unmarshal(encoded, &req); err != nil {
+		return anthropicRequest{}, "Invalid JSON in request body"
+	}
+	req.Raw = raw
 	if strings.TrimSpace(req.Model) == "" {
 		return anthropicRequest{}, "model is required"
 	}
@@ -371,6 +426,29 @@ func setOpenAIHeaders(headers http.Header, provider config.Provider) {
 	}
 }
 
+func setRouteCacheHeaders(headers http.Header, cache config.RouteCache) {
+	if !cache.Enabled {
+		return
+	}
+	headers.Set("X-OpenRouter-Cache", "true")
+	if cache.TTLSeconds > 0 {
+		headers.Set("X-OpenRouter-Cache-TTL", strconv.Itoa(cache.TTLSeconds))
+	}
+}
+
+func copyOpenRouterCacheHeaders(dst http.Header, src http.Header) {
+	for _, name := range []string{
+		"X-OpenRouter-Cache-Status",
+		"X-OpenRouter-Cache-Age",
+		"X-OpenRouter-Cache-TTL",
+		"X-Generation-Id",
+	} {
+		if value := src.Get(name); value != "" {
+			dst.Set(name, value)
+		}
+	}
+}
+
 func (g *Gateway) hasValidGatewayAuth(headers http.Header) bool {
 	if g.cfg.GatewayAPIKey == "" {
 		return true
@@ -436,7 +514,7 @@ func upstreamError(response *http.Response) string {
 				return value
 			}
 		case map[string]any:
-			if message, ok := value["message"].(string); ok && message != "" {
+			if message := openRouterErrorMessage(value); message != "" {
 				return message
 			}
 		}
@@ -445,6 +523,28 @@ func upstreamError(response *http.Response) string {
 		return http.StatusText(response.StatusCode)
 	}
 	return "OpenRouter request failed"
+}
+
+func openRouterErrorMessage(value map[string]any) string {
+	message, _ := value["message"].(string)
+	metadata, _ := value["metadata"].(map[string]any)
+	providerName, _ := metadata["provider_name"].(string)
+	rawMessage, _ := metadata["raw"].(string)
+
+	if message == "" {
+		message = rawMessage
+		rawMessage = ""
+	}
+	if providerName != "" && rawMessage != "" {
+		return fmt.Sprintf("%s (%s): %s", message, providerName, rawMessage)
+	}
+	if rawMessage != "" {
+		return message + ": " + rawMessage
+	}
+	if providerName != "" && message != "" {
+		return fmt.Sprintf("%s (%s)", message, providerName)
+	}
+	return message
 }
 
 type openAICompletion struct {

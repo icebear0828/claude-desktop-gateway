@@ -4,6 +4,7 @@ import {
   storeLocale,
   translate,
 } from "./i18n.js";
+import { mergeEditedRoute } from "./routes.js";
 
 const SECRET_NAMES = ["OPENROUTER_API_KEY", "CLAUDE_GATEWAY_API_KEY"];
 
@@ -270,7 +271,7 @@ function fallbackEditor() {
       providers: [
         {
           name: "openrouter",
-          profile: "openai-chat",
+          profile: "anthropic-messages",
           baseUrl: "https://openrouter.ai/api/v1",
           apiKeyEnv: "OPENROUTER_API_KEY",
           referrer: "",
@@ -562,10 +563,7 @@ async function saveRoute(event) {
     return;
   }
 
-  const nextRoute = { desktopID, provider, upstreamModel, displayName };
-  const nextRoutes = config.routes.filter((route) => route.desktopID !== originalID && route.desktopID !== desktopID);
-  nextRoutes.push(nextRoute);
-  nextRoutes.sort((left, right) => left.desktopID.localeCompare(right.desktopID));
+  const nextRoutes = mergeEditedRoute(config.routes, originalID, { desktopID, provider, upstreamModel, displayName });
   await saveEditorConfig({ ...config, routes: nextRoutes });
   resetRouteForm();
 }

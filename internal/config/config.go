@@ -49,9 +49,25 @@ func (c ProviderCapabilities) Effective() ProviderCapabilities {
 }
 
 type Route struct {
-	Provider    string
-	Model       string
-	DisplayName string
+	Provider          string
+	Model             string
+	DisplayName       string
+	DynamicFreeModels DynamicFreeModels
+	Cache             RouteCache
+}
+
+type DynamicFreeModels struct {
+	Enabled                bool
+	RequiredParameters     []string
+	MinContextLength       int
+	MaxModels              int
+	CatalogCacheTTLSeconds int
+	Fallback               []string
+}
+
+type RouteCache struct {
+	Enabled    bool
+	TTLSeconds int
 }
 
 type DesktopModel struct {
@@ -81,10 +97,12 @@ type ProviderSummary struct {
 }
 
 type RouteSummary struct {
-	DesktopID     string `json:"desktopID"`
-	DisplayName   string `json:"displayName"`
-	Provider      string `json:"provider"`
-	UpstreamModel string `json:"upstreamModel"`
+	DesktopID         string            `json:"desktopID"`
+	DisplayName       string            `json:"displayName"`
+	Provider          string            `json:"provider"`
+	UpstreamModel     string            `json:"upstreamModel"`
+	DynamicFreeModels DynamicFreeModels `json:"dynamicFreeModels"`
+	Cache             RouteCache        `json:"cache"`
 }
 
 type Config struct {
@@ -135,7 +153,7 @@ func LoadFromEnv(env map[string]string) (Config, error) {
 		TLSKeyFile:    strings.TrimSpace(env["TLS_KEY_FILE"]),
 		Providers: map[string]Provider{
 			DefaultOpenRouterName: {
-				Profile:      "openai-chat",
+				Profile:      "anthropic-messages",
 				BaseURL:      strings.TrimRight(baseURL, "/"),
 				APIKey:       apiKey,
 				Referrer:     strings.TrimSpace(env["OPENROUTER_REFERRER"]),
@@ -170,9 +188,25 @@ type fileCapabilities struct {
 }
 
 type fileRoute struct {
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	DisplayName string `json:"displayName"`
+	Provider          string                 `json:"provider"`
+	Model             string                 `json:"model"`
+	DisplayName       string                 `json:"displayName"`
+	DynamicFreeModels *fileDynamicFreeModels `json:"dynamicFreeModels"`
+	Cache             *fileRouteCache        `json:"cache"`
+}
+
+type fileDynamicFreeModels struct {
+	Enabled                bool     `json:"enabled"`
+	RequiredParameters     []string `json:"requiredParameters"`
+	MinContextLength       int      `json:"minContextLength"`
+	MaxModels              int      `json:"maxModels"`
+	CatalogCacheTTLSeconds int      `json:"catalogCacheTTLSeconds"`
+	Fallback               []string `json:"fallback"`
+}
+
+type fileRouteCache struct {
+	Enabled    bool `json:"enabled"`
+	TTLSeconds int  `json:"ttlSeconds"`
 }
 
 type fileConfig struct {
@@ -269,9 +303,11 @@ func LoadFromFile(path string, env map[string]string) (Config, error) {
 					return Config{}, fmt.Errorf("route %q references unknown provider %q", alias, provider)
 				}
 				cfg.Routes[alias] = append(cfg.Routes[alias], Route{
-					Provider:    provider,
-					Model:       model,
-					DisplayName: strings.TrimSpace(route.DisplayName),
+					Provider:          provider,
+					Model:             model,
+					DisplayName:       strings.TrimSpace(route.DisplayName),
+					DynamicFreeModels: dynamicFreeModelsFromFile(route.DynamicFreeModels),
+					Cache:             routeCacheFromFile(route.Cache),
 				})
 			}
 		}
@@ -378,10 +414,12 @@ func InspectFile(path string) (FileSummary, error) {
 				displayName = desktopID
 			}
 			summary.Routes = append(summary.Routes, RouteSummary{
-				DesktopID:     desktopID,
-				DisplayName:   displayName,
-				Provider:      provider,
-				UpstreamModel: model,
+				DesktopID:         desktopID,
+				DisplayName:       displayName,
+				Provider:          provider,
+				UpstreamModel:     model,
+				DynamicFreeModels: dynamicFreeModelsFromFile(route.DynamicFreeModels),
+				Cache:             routeCacheFromFile(route.Cache),
 			})
 		}
 	}
@@ -396,17 +434,25 @@ func InspectFile(path string) (FileSummary, error) {
 }
 
 func (c Config) ResolveRoute(model string) (Route, bool) {
-	trimmed := strings.TrimSpace(model)
-	if trimmed == "" {
+	routes, ok := c.ResolveRoutes(model)
+	if !ok || len(routes) == 0 {
 		return Route{}, false
 	}
+	return routes[0], true
+}
+
+func (c Config) ResolveRoutes(model string) ([]Route, bool) {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return nil, false
+	}
 	if routes := c.Routes[trimmed]; len(routes) > 0 {
-		return routes[0], true
+		return append([]Route(nil), routes...), true
 	}
 	if _, ok := c.Providers[DefaultOpenRouterName]; ok {
-		return Route{Provider: DefaultOpenRouterName, Model: trimmed}, true
+		return []Route{{Provider: DefaultOpenRouterName, Model: trimmed}}, true
 	}
-	return Route{}, false
+	return nil, false
 }
 
 func (c Config) ProviderFor(route Route) (Provider, bool) {
@@ -491,13 +537,77 @@ func fileRoutesFromRoutes(routes map[string][]Route) map[string][]fileRoute {
 	for alias, routeList := range routes {
 		for _, route := range routeList {
 			converted[alias] = append(converted[alias], fileRoute{
-				Provider:    route.Provider,
-				Model:       route.Model,
-				DisplayName: route.DisplayName,
+				Provider:          route.Provider,
+				Model:             route.Model,
+				DisplayName:       route.DisplayName,
+				DynamicFreeModels: fileDynamicFreeModelsFromRoute(route.DynamicFreeModels),
+				Cache:             fileRouteCacheFromRoute(route.Cache),
 			})
 		}
 	}
 	return converted
+}
+
+func dynamicFreeModelsFromFile(raw *fileDynamicFreeModels) DynamicFreeModels {
+	if raw == nil {
+		return DynamicFreeModels{}
+	}
+	return DynamicFreeModels{
+		Enabled:                raw.Enabled,
+		RequiredParameters:     cleanStringList(raw.RequiredParameters),
+		MinContextLength:       raw.MinContextLength,
+		MaxModels:              raw.MaxModels,
+		CatalogCacheTTLSeconds: raw.CatalogCacheTTLSeconds,
+		Fallback:               cleanStringList(raw.Fallback),
+	}
+}
+
+func fileDynamicFreeModelsFromRoute(dynamic DynamicFreeModels) *fileDynamicFreeModels {
+	if !dynamic.Enabled && len(dynamic.RequiredParameters) == 0 && dynamic.MinContextLength == 0 && dynamic.MaxModels == 0 && dynamic.CatalogCacheTTLSeconds == 0 && len(dynamic.Fallback) == 0 {
+		return nil
+	}
+	return &fileDynamicFreeModels{
+		Enabled:                dynamic.Enabled,
+		RequiredParameters:     cleanStringList(dynamic.RequiredParameters),
+		MinContextLength:       dynamic.MinContextLength,
+		MaxModels:              dynamic.MaxModels,
+		CatalogCacheTTLSeconds: dynamic.CatalogCacheTTLSeconds,
+		Fallback:               cleanStringList(dynamic.Fallback),
+	}
+}
+
+func routeCacheFromFile(raw *fileRouteCache) RouteCache {
+	if raw == nil {
+		return RouteCache{}
+	}
+	return RouteCache{
+		Enabled:    raw.Enabled,
+		TTLSeconds: raw.TTLSeconds,
+	}
+}
+
+func fileRouteCacheFromRoute(cache RouteCache) *fileRouteCache {
+	if !cache.Enabled && cache.TTLSeconds == 0 {
+		return nil
+	}
+	return &fileRouteCache{
+		Enabled:    cache.Enabled,
+		TTLSeconds: cache.TTLSeconds,
+	}
+}
+
+func cleanStringList(values []string) []string {
+	cleaned := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		cleaned = append(cleaned, trimmed)
+		seen[trimmed] = true
+	}
+	return cleaned
 }
 
 func capabilitiesFromFile(raw *fileCapabilities) ProviderCapabilities {
@@ -519,12 +629,13 @@ func capabilitiesFromFile(raw *fileCapabilities) ProviderCapabilities {
 
 func parseAliasEnv(value string, defaultModel string) map[string]string {
 	aliases := map[string]string{
-		"claude-opus-4-7":   defaultModel,
-		"claude-opus-4.7":   defaultModel,
-		"claude-sonnet-4-6": defaultModel,
-		"claude-sonnet-4.6": defaultModel,
-		"claude-haiku-4-5":  defaultModel,
-		"claude-haiku-4.5":  defaultModel,
+		"claude-ring-2-6-1t-free": defaultModel,
+		"claude-opus-4-7":         defaultModel,
+		"claude-opus-4.7":         defaultModel,
+		"claude-sonnet-4-6":       defaultModel,
+		"claude-sonnet-4.6":       defaultModel,
+		"claude-haiku-4-5":        defaultModel,
+		"claude-haiku-4.5":        defaultModel,
 	}
 
 	value = strings.TrimSpace(value)
