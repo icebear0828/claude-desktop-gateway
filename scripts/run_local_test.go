@@ -14,7 +14,7 @@ func TestRunLocalDryRunRequiresEnvFile(t *testing.T) {
 	t.Parallel()
 
 	missingEnvPath := filepath.Join(t.TempDir(), ".env.local")
-	cmd := exec.Command("./run-local", "--dry-run")
+	cmd := scriptCommand("run-local", "--dry-run")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_ENV_FILE="+missingEnvPath,
 		"CLAUDE_GATEWAY_CONFIG="+filepath.Join(t.TempDir(), "gateway.local.json"),
@@ -45,7 +45,7 @@ func TestRunLocalDryRunRequiresOpenRouterAPIKey(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	cmd := exec.Command("./run-local", "--dry-run")
+	cmd := scriptCommand("run-local", "--dry-run")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_ENV_FILE="+envPath,
 		"CLAUDE_GATEWAY_CONFIG="+configPath,
@@ -80,7 +80,7 @@ func TestRunLocalDryRunDoesNotPrintSecrets(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	cmd := exec.Command("./run-local", "--dry-run")
+	cmd := scriptCommand("run-local", "--dry-run")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_ENV_FILE="+envPath,
 		"CLAUDE_GATEWAY_CONFIG="+configPath,
@@ -119,7 +119,7 @@ func TestLocalGatewayStartDryRunDoesNotPrintSecrets(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	cmd := exec.Command("./local-gateway", "start", "--dry-run")
+	cmd := scriptCommand("local-gateway", "start", "--dry-run")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_ENV_FILE="+envPath,
 		"CLAUDE_GATEWAY_CONFIG="+configPath,
@@ -154,7 +154,7 @@ func TestLocalGatewayStatusReportsManagedPID(t *testing.T) {
 		t.Fatalf("write pid file: %v", err)
 	}
 
-	cmd := exec.Command("./local-gateway", "status")
+	cmd := scriptCommand("local-gateway", "status")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_STATE_DIR="+stateDir,
 		"CLAUDE_GATEWAY_HEALTH_URL=http://127.0.0.1:1/health",
@@ -172,7 +172,7 @@ func TestLocalGatewayStatusReportsManagedPID(t *testing.T) {
 func TestLocalGatewayStopWithoutManagedProcessIsClear(t *testing.T) {
 	t.Parallel()
 
-	cmd := exec.Command("./local-gateway", "stop")
+	cmd := scriptCommand("local-gateway", "stop")
 	cmd.Env = append(os.Environ(),
 		"CLAUDE_GATEWAY_STATE_DIR="+t.TempDir(),
 		"CLAUDE_GATEWAY_HEALTH_URL=http://127.0.0.1:1/health",
@@ -185,4 +185,12 @@ func TestLocalGatewayStopWithoutManagedProcessIsClear(t *testing.T) {
 	if !strings.Contains(string(output), "local gateway is not managed by this script") {
 		t.Fatalf("output = %q", output)
 	}
+}
+
+func scriptCommand(name string, args ...string) *exec.Cmd {
+	scriptPath := "./" + name
+	if runtime.GOOS == "windows" {
+		return exec.Command("bash", append([]string{scriptPath}, args...)...)
+	}
+	return exec.Command(scriptPath, args...)
 }

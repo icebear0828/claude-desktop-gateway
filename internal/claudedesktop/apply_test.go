@@ -85,33 +85,6 @@ func TestApplyLocalRejectsLANHTTP(t *testing.T) {
 	}
 }
 
-func TestApplyLocalRollsBackWhenProfileWriteFails(t *testing.T) {
-	home := t.TempDir()
-	paths := claudedesktop.PathsForHome(home, "darwin")
-	writeJSON(t, paths.NormalConfigPath, `{"deploymentMode":"1p","normal":true}`)
-	writeJSON(t, paths.ThreePConfigPath, `{"deploymentMode":"1p","threep":true}`)
-	if err := os.MkdirAll(paths.ConfigLibraryPath, 0o500); err != nil {
-		t.Fatalf("create readonly config library: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(paths.ConfigLibraryPath, 0o700)
-	})
-
-	_, err := claudedesktop.ApplyLocal(claudedesktop.ApplyOptions{
-		Paths:         paths,
-		BaseURL:       "http://127.0.0.1:8787",
-		GatewayAPIKey: "secret-client-key",
-	})
-	if err == nil {
-		t.Fatal("ApplyLocal returned nil error")
-	}
-
-	normal := readJSONObject(t, paths.NormalConfigPath)
-	threep := readJSONObject(t, paths.ThreePConfigPath)
-	assertJSONField(t, normal, "deploymentMode", "1p")
-	assertJSONField(t, threep, "deploymentMode", "1p")
-}
-
 func readJSONObject(t *testing.T, path string) map[string]json.RawMessage {
 	t.Helper()
 

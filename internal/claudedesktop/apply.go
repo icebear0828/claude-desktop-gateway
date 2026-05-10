@@ -37,6 +37,8 @@ type fileSnapshot struct {
 	exists  bool
 }
 
+type jsonObjectWriter func(path string, obj jsonObject) error
+
 func DefaultModelIDs() []string {
 	return []string{
 		"claude-sonnet-4.6",
@@ -49,6 +51,10 @@ func DefaultModelIDs() []string {
 }
 
 func ApplyLocal(options ApplyOptions) (ApplyResult, error) {
+	return applyLocalWithWriter(options, writeJSONObject)
+}
+
+func applyLocalWithWriter(options ApplyOptions, writeJSON jsonObjectWriter) (ApplyResult, error) {
 	paths := options.Paths
 	if paths.ConfigLibraryPath == "" {
 		var err error
@@ -92,7 +98,7 @@ func ApplyLocal(options ApplyOptions) (ApplyResult, error) {
 		return ApplyResult{}, err
 	}
 
-	if err := applyLocalInner(paths, profileID, profileName, baseURL, gatewayAPIKey, modelIDs, targetProfilePath); err != nil {
+	if err := applyLocalInner(paths, profileID, profileName, baseURL, gatewayAPIKey, modelIDs, targetProfilePath, writeJSON); err != nil {
 		if rollbackErr := restoreFileSnapshots(snapshots); rollbackErr != nil {
 			return ApplyResult{}, fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
 		}
@@ -115,7 +121,7 @@ func FormatApplyResult(result ApplyResult) string {
 	return b.String()
 }
 
-func applyLocalInner(paths Paths, profileID string, profileName string, baseURL string, gatewayAPIKey string, modelIDs []string, targetProfilePath string) error {
+func applyLocalInner(paths Paths, profileID string, profileName string, baseURL string, gatewayAPIKey string, modelIDs []string, targetProfilePath string, writeJSON jsonObjectWriter) error {
 	sourceProfile := readActiveProfile(paths)
 	profile, err := buildLocalProfile(sourceProfile, baseURL, gatewayAPIKey, modelIDs)
 	if err != nil {
@@ -123,16 +129,16 @@ func applyLocalInner(paths Paths, profileID string, profileName string, baseURL 
 	}
 	meta := buildMeta(paths.MetaPath, profileID, profileName)
 
-	if err := writeDeploymentMode(paths.NormalConfigPath, "3p"); err != nil {
+	if err := writeDeploymentMode(paths.NormalConfigPath, "3p", writeJSON); err != nil {
 		return err
 	}
-	if err := writeDeploymentMode(paths.ThreePConfigPath, "3p"); err != nil {
+	if err := writeDeploymentMode(paths.ThreePConfigPath, "3p", writeJSON); err != nil {
 		return err
 	}
-	if err := writeJSONObject(targetProfilePath, profile); err != nil {
+	if err := writeJSON(targetProfilePath, profile); err != nil {
 		return err
 	}
-	if err := writeJSONObject(paths.MetaPath, meta); err != nil {
+	if err := writeJSON(paths.MetaPath, meta); err != nil {
 		return err
 	}
 	return nil
@@ -208,13 +214,13 @@ func readActiveProfile(paths Paths) jsonObject {
 	return profile
 }
 
-func writeDeploymentMode(path string, mode string) error {
+func writeDeploymentMode(path string, mode string, writeJSON jsonObjectWriter) error {
 	obj, exists, err := readJSONObject(path)
 	if err != nil || !exists {
 		obj = jsonObject{}
 	}
 	setString(obj, "deploymentMode", mode)
-	return writeJSONObject(path, obj)
+	return writeJSON(path, obj)
 }
 
 func writeJSONObject(path string, obj jsonObject) error {
