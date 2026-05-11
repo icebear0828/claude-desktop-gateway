@@ -221,10 +221,11 @@ GOCACHE=/private/tmp/go-build-cache go test ./...
 
 ## Run Desktop GUI
 
-The GUI MVP is a Wails desktop shell that reads the existing Go/config state
-instead of duplicating gateway protocol logic. It currently shows gateway
-health, listen URL, config errors, providers, route aliases, and Claude Desktop
-doctor status. Start/stop controls and route editing are next-phase work.
+The GUI is a Wails desktop shell that reads the existing Go/config state
+instead of duplicating gateway protocol logic. It shows gateway health, listen
+URL, config errors, providers, route aliases, and Claude Desktop doctor status,
+and it automatically starts or restarts the local gateway after config or secret
+changes.
 
 Launch the desktop app directly:
 
@@ -232,7 +233,7 @@ Launch the desktop app directly:
 GOCACHE=/private/tmp/go-build-cache go run .
 ```
 
-Build a signed local macOS app bundle:
+Build a local macOS app bundle:
 
 ```bash
 GOCACHE=/private/tmp/go-build-cache /Users/c/go/bin/wails build
@@ -254,12 +255,12 @@ The release workflow builds unsigned Wails apps on native runners and uploads:
 
 - `claude-desktop-gateway-<tag>-macos-arm64.zip`
 - `claude-desktop-gateway-<tag>-macos-amd64.zip`
-- `claude-desktop-gateway-<tag>-windows-amd64.zip`
+- `claude-desktop-gateway-<tag>-windows-amd64-setup.exe`
 - `claude-desktop-gateway-<tag>-linux-amd64.tar.gz`
 
 These preview builds are not signed or notarized. macOS may require approving
-the app in Privacy & Security, Windows may show SmartScreen, and Linux requires
-GTK 3 plus WebKitGTK 4.1 runtime libraries.
+the app in Privacy & Security, Windows uses an NSIS setup executable and may
+show SmartScreen, and Linux requires GTK 3 plus WebKitGTK 4.1 runtime libraries.
 
 ## Run TypeScript Reference
 

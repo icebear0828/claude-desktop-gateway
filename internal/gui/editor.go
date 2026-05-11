@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -51,6 +52,9 @@ func (s *Service) SaveConfig(editable config.EditableFile) (EditorState, error) 
 	if _, err := config.SaveEditableFile(s.options.ConfigPath, editable); err != nil {
 		return EditorState{}, err
 	}
+	if s.options.ManageGateway {
+		_ = s.RestartGateway(context.Background())
+	}
 	return s.Editor()
 }
 
@@ -62,6 +66,11 @@ func (s *Service) SaveSecret(input SecretInput) (EditorState, error) {
 	if err := localenv.SaveSecret(s.options.EnvPath, name, input.Value); err != nil {
 		return EditorState{}, err
 	}
+	if s.options.ManageGateway {
+		if err := s.RestartGateway(context.Background()); err != nil {
+			return EditorState{}, err
+		}
+	}
 	return s.Editor()
 }
 
@@ -72,6 +81,9 @@ func (s *Service) DeleteSecret(input SecretNameInput) (EditorState, error) {
 	}
 	if err := localenv.DeleteSecret(s.options.EnvPath, name); err != nil {
 		return EditorState{}, err
+	}
+	if s.options.ManageGateway {
+		_ = s.RestartGateway(context.Background())
 	}
 	return s.Editor()
 }

@@ -48,13 +48,13 @@ jobs:
           Assets:
           - macOS arm64 app zip
           - macOS amd64 app zip
-          - Windows amd64 exe zip
+          - Windows amd64 NSIS setup exe
           - Linux amd64 tar.gz
 
           Notes:
           - Builds are unsigned and not notarized.
           - macOS may require approving the app in Privacy & Security before first launch.
-          - Windows may show SmartScreen because the binary is unsigned.
+          - Windows may show SmartScreen because the installer is unsigned.
           - Linux requires GTK 3 and WebKitGTK 4.1 runtime libraries.
           EOF
 
@@ -123,6 +123,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
 
+      - name: Install Windows installer dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y
+          }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install Wails CLI
         shell: bash
         run: |
@@ -152,6 +161,9 @@ jobs:
           if [ -n "${{ matrix.webview2 }}" ]; then
             args+=(-webview2 "${{ matrix.webview2 }}")
           fi
+          if [ "${{ matrix.package }}" = "windows" ]; then
+            args+=(-nsis)
+          fi
           wails build "${args[@]}"
 
       - name: Package app
@@ -168,7 +180,12 @@ jobs:
                 "release-dist/${base}.zip"
               ;;
             windows)
-              7z a "release-dist/${base}.zip" "./build/bin/claude-desktop-gateway.exe"
+              installer="$(find build/bin -maxdepth 1 -name '*-installer.exe' -print -quit)"
+              if [ -z "${installer}" ]; then
+                echo "Windows installer was not produced" >&2
+                exit 1
+              fi
+              cp "${installer}" "release-dist/${base}-setup.exe"
               ;;
             linux)
               tar -czf "release-dist/${base}.tar.gz" -C build/bin claude-desktop-gateway

@@ -175,7 +175,7 @@ go run ./cmd/gateway
 
 ## Desktop GUI
 
-GUI 是 Wails 桌面应用，读取现有 Go/config 状态，不重复实现网关协议逻辑。目前展示 gateway health、listen URL、配置错误、providers、route aliases 和 Claude Desktop doctor 状态。
+GUI 是 Wails 桌面应用，读取现有 Go/config 状态，不重复实现网关协议逻辑。它展示 gateway health、listen URL、配置错误、providers、route aliases 和 Claude Desktop doctor 状态，并在配置或密钥保存后自动启动/重启本地 gateway。
 
 直接启动：
 
@@ -197,13 +197,13 @@ GOCACHE=/private/tmp/go-build-cache /Users/c/go/bin/wails build
 
 - `claude-desktop-gateway-<tag>-macos-arm64.zip`
 - `claude-desktop-gateway-<tag>-macos-amd64.zip`
-- `claude-desktop-gateway-<tag>-windows-amd64.zip`
+- `claude-desktop-gateway-<tag>-windows-amd64-setup.exe`
 - `claude-desktop-gateway-<tag>-linux-amd64.tar.gz`
 
 这些是未签名、未公证的预览构建：
 
 - macOS 首次打开可能需要在 Privacy & Security 里手动允许。
-- Windows 可能出现 SmartScreen 提示。
+- Windows 使用 NSIS 安装包，可能出现 SmartScreen 提示。
 - Linux 需要 GTK 3 和 WebKitGTK 4.1 runtime libraries。
 
 ## TypeScript 参考实现

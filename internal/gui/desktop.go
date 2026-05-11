@@ -1,8 +1,10 @@
 package gui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"github.com/local/claude-desktop-gateway/internal/claudedesktop"
@@ -31,10 +33,7 @@ func (s *Service) ApplyClaudeDesktopConfig() (ClaudeDesktopApplyResult, error) {
 	if err != nil {
 		return ClaudeDesktopApplyResult{}, err
 	}
-	baseURL := strings.TrimRight(s.options.ExpectedBaseURL, "/")
-	if baseURL == "" {
-		baseURL = "http://127.0.0.1:8787"
-	}
+	baseURL := s.desktopBaseURL()
 
 	result, err := claudedesktop.ApplyLocal(claudedesktop.ApplyOptions{
 		Paths:         s.options.DesktopPaths,
@@ -44,6 +43,11 @@ func (s *Service) ApplyClaudeDesktopConfig() (ClaudeDesktopApplyResult, error) {
 	})
 	if err != nil {
 		return ClaudeDesktopApplyResult{}, err
+	}
+	if s.options.ManageGateway {
+		if err := s.RestartGateway(context.Background()); err != nil {
+			return ClaudeDesktopApplyResult{}, fmt.Errorf("restart local gateway after repairing Claude Desktop config: %w", err)
+		}
 	}
 	return ClaudeDesktopApplyResult{
 		ProfileID:       result.ProfileID,
@@ -97,4 +101,15 @@ func (s *Service) desktopModelIDs() ([]string, error) {
 		return claudedesktop.DefaultModelIDs(), nil
 	}
 	return modelIDs, nil
+}
+
+func (s *Service) desktopBaseURL() string {
+	if trimmed := strings.TrimRight(strings.TrimSpace(s.options.ExpectedBaseURL), "/"); trimmed != "" {
+		return trimmed
+	}
+	summary, err := config.InspectFile(s.options.ConfigPath)
+	if err != nil {
+		return defaultBaseURL()
+	}
+	return listenURL(summary)
 }
