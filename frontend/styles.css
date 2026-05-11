@@ -522,16 +522,22 @@ dd {
 
 .input {
   width: 100%;
+  min-width: 0;
   height: 44px;
   border: 1px solid var(--hairline);
   border-radius: var(--rounded-pill);
-  padding: 12px 20px;
+  padding: 8px 16px;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-text);
   font-size: 17px;
-  line-height: 1.47;
+  line-height: 1.25;
   transition: border-color 0.1s ease;
+}
+
+select.input {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .input:focus {
