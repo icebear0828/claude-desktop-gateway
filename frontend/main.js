@@ -623,7 +623,7 @@ async function applyClaudeDesktopConfig() {
   showDesktopMessage("");
   try {
     await method();
-    await loadDashboardOnly();
+    await loadAll();
     showDesktopMessage(t("desktop.repairDone"), "ok");
   } catch (error) {
     showDesktopMessage(error instanceof Error ? error.message : String(error));

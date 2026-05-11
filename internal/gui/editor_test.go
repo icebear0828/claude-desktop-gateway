@@ -1,6 +1,7 @@
 package gui_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,23 +218,54 @@ func TestApplyClaudeDesktopConfigRepairsBadActiveWindowsProfile(t *testing.T) {
 	}
 }
 
-func TestApplyClaudeDesktopConfigRequiresGatewayKey(t *testing.T) {
+func TestApplyClaudeDesktopConfigGeneratesMissingGatewayKey(t *testing.T) {
 	repoRoot := t.TempDir()
 	configPath := writeEditorConfig(t, repoRoot)
 	envPath := filepath.Join(repoRoot, ".env.local")
+	if err := os.WriteFile(envPath, []byte("export OPENROUTER_API_KEY='openrouter-test-key'\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
 	t.Setenv("CLAUDE_GATEWAY_API_KEY", "")
+	home := t.TempDir()
+	paths := claudedesktop.PathsForHome(home, "windows")
 	service := gui.NewService(gui.Options{
-		RepoRoot:   repoRoot,
-		ConfigPath: configPath,
-		EnvPath:    envPath,
+		RepoRoot:     repoRoot,
+		ConfigPath:   configPath,
+		EnvPath:      envPath,
+		DesktopPaths: paths,
 	})
 
-	_, err := service.ApplyClaudeDesktopConfig()
-	if err == nil {
-		t.Fatal("ApplyClaudeDesktopConfig returned nil error without gateway key")
+	result, err := service.ApplyClaudeDesktopConfig()
+	if err != nil {
+		t.Fatalf("ApplyClaudeDesktopConfig returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "CLAUDE_GATEWAY_API_KEY") {
-		t.Fatalf("error = %v", err)
+
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read env: %v", err)
+	}
+	if !strings.Contains(string(envData), "CLAUDE_GATEWAY_API_KEY=") {
+		t.Fatalf("generated gateway key was not saved:\n%s", string(envData))
+	}
+
+	profile := readProfileJSON(t, result.ProfilePath)
+	var profileKey string
+	if err := json.Unmarshal(profile["inferenceGatewayApiKey"], &profileKey); err != nil {
+		t.Fatalf("profile gateway key is not a string: %v", err)
+	}
+	if strings.TrimSpace(profileKey) == "" {
+		t.Fatal("profile gateway key is empty")
+	}
+
+	report, err := claudedesktop.Diagnose(claudedesktop.DiagnosticOptions{
+		Paths:           paths,
+		ExpectedBaseURL: "http://127.0.0.1:8787",
+	})
+	if err != nil {
+		t.Fatalf("Diagnose returned error: %v", err)
+	}
+	if len(report.Issues) != 0 {
+		t.Fatalf("issues after repair = %#v", report.Issues)
 	}
 }
 
@@ -275,4 +307,17 @@ func writeDesktopJSON(t *testing.T, path string, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func readProfileJSON(t *testing.T, path string) map[string]json.RawMessage {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	var profile map[string]json.RawMessage
+	if err := json.Unmarshal(data, &profile); err != nil {
+		t.Fatalf("parse profile: %v", err)
+	}
+	return profile
 }
