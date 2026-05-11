@@ -112,6 +112,62 @@ func TestDashboardCombinesConfigGatewayAndClaudeDesktopState(t *testing.T) {
 	}
 }
 
+func TestDashboardUsesConfiguredListenURLForDefaultHealthCheck(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := filepath.Join(repoRoot, "gateway.local.json")
+	body := `{
+		"host": "127.0.0.1",
+		"port": 9898,
+		"providers": {
+			"openrouter": {
+				"profile": "openai-chat",
+				"baseUrl": "https://openrouter.ai/api/v1",
+				"apiKeyEnv": "OPENROUTER_API_KEY"
+			}
+		},
+		"routes": {
+			"claude-test-model": [
+				{
+					"provider": "openrouter",
+					"model": "test/model",
+					"displayName": "Test Model"
+				}
+			]
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	service := gui.NewService(gui.Options{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		StateDir:   filepath.Join(repoRoot, ".local-gateway"),
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.URL.String() != "http://127.0.0.1:9898/health" {
+				t.Fatalf("health URL = %q", request.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"status":"ok"}`)),
+				Header:     make(http.Header),
+				Request:    request,
+			}, nil
+		})},
+	})
+	dashboard := service.Dashboard(context.Background())
+
+	if dashboard.ListenURL != "http://127.0.0.1:9898" {
+		t.Fatalf("ListenURL = %q", dashboard.ListenURL)
+	}
+	if dashboard.Gateway.HealthURL != "http://127.0.0.1:9898/health" {
+		t.Fatalf("HealthURL = %q", dashboard.Gateway.HealthURL)
+	}
+	if dashboard.Gateway.State != "running" {
+		t.Fatalf("gateway state = %q", dashboard.Gateway.State)
+	}
+}
+
 func TestDashboardReturnsActionableErrorsWithoutFailingWholePage(t *testing.T) {
 	repoRoot := t.TempDir()
 	configPath := filepath.Join(repoRoot, "gateway.local.json")

@@ -13,11 +13,16 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{service: gui.NewService(gui.Options{})}
+	return &App{service: gui.NewService(gui.Options{ManageGateway: true})}
 }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	a.service.TryStartGateway(ctx)
+}
+
+func (a *App) Shutdown(ctx context.Context) {
+	_ = a.service.StopGateway(ctx)
 }
 
 func (a *App) Dashboard() gui.Dashboard {

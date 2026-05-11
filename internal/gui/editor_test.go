@@ -2,6 +2,7 @@ package gui_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -269,12 +270,43 @@ func TestApplyClaudeDesktopConfigGeneratesMissingGatewayKey(t *testing.T) {
 	}
 }
 
+func TestApplyClaudeDesktopConfigUsesConfiguredListenURL(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := writeEditorConfigWithPort(t, repoRoot, 9898)
+	envPath := filepath.Join(repoRoot, ".env.local")
+	if err := os.WriteFile(envPath, []byte("export CLAUDE_GATEWAY_API_KEY='client-test-key'\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	home := t.TempDir()
+	paths := claudedesktop.PathsForHome(home, "windows")
+	service := gui.NewService(gui.Options{
+		RepoRoot:     repoRoot,
+		ConfigPath:   configPath,
+		EnvPath:      envPath,
+		DesktopPaths: paths,
+	})
+
+	result, err := service.ApplyClaudeDesktopConfig()
+	if err != nil {
+		t.Fatalf("ApplyClaudeDesktopConfig returned error: %v", err)
+	}
+	if result.BaseURL != "http://127.0.0.1:9898" {
+		t.Fatalf("BaseURL = %q", result.BaseURL)
+	}
+}
+
 func writeEditorConfig(t *testing.T, repoRoot string) string {
 	t.Helper()
+	return writeEditorConfigWithPort(t, repoRoot, 8787)
+}
+
+func writeEditorConfigWithPort(t *testing.T, repoRoot string, port int) string {
+	t.Helper()
 	configPath := filepath.Join(repoRoot, "gateway.local.json")
-	body := `{
+	body := fmt.Sprintf(`{
 		"host": "127.0.0.1",
-		"port": 8787,
+		"port": %d,
 		"gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
 		"providers": {
 			"openrouter": {
@@ -292,7 +324,7 @@ func writeEditorConfig(t *testing.T, repoRoot string) string {
 				}
 			]
 		}
-	}`
+	}`, port)
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

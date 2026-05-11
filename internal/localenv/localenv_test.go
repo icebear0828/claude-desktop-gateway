@@ -104,3 +104,33 @@ func TestSecretValuePrefersProcessEnv(t *testing.T) {
 		t.Fatalf("value = %q, want process env value", value)
 	}
 }
+
+func TestValuesReadsEnvFileAssignments(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env.local")
+	body := strings.Join([]string{
+		"# comment",
+		"export OPENROUTER_API_KEY='or-test-key'",
+		"CLAUDE_GATEWAY_API_KEY=client-key # local client",
+		"OPENROUTER_TITLE=\"Claude Gateway\"",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	values, err := localenv.Values(path)
+	if err != nil {
+		t.Fatalf("Values returned error: %v", err)
+	}
+
+	if values["OPENROUTER_API_KEY"] != "or-test-key" {
+		t.Fatalf("OPENROUTER_API_KEY = %q", values["OPENROUTER_API_KEY"])
+	}
+	if values["CLAUDE_GATEWAY_API_KEY"] != "client-key" {
+		t.Fatalf("CLAUDE_GATEWAY_API_KEY = %q", values["CLAUDE_GATEWAY_API_KEY"])
+	}
+	if values["OPENROUTER_TITLE"] != "Claude Gateway" {
+		t.Fatalf("OPENROUTER_TITLE = %q", values["OPENROUTER_TITLE"])
+	}
+}

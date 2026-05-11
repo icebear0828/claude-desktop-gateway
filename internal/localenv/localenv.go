@@ -71,6 +71,29 @@ func SecretValue(path string, name string) (string, error) {
 	return value, nil
 }
 
+func Values(path string) (map[string]string, error) {
+	lines, err := readLines(path)
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]string{}
+	for _, line := range lines {
+		key, raw, ok := assignment(line)
+		if !ok {
+			continue
+		}
+		if !validKey(key) {
+			return nil, fmt.Errorf("invalid env var name %q", key)
+		}
+		value, err := parseEnvValue(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", key, err)
+		}
+		values[key] = value
+	}
+	return values, nil
+}
+
 func SaveSecret(path string, name string, value string) error {
 	key := strings.TrimSpace(name)
 	if !validKey(key) {
@@ -159,22 +182,27 @@ func assignsKey(line string, key string) bool {
 }
 
 func assignmentValue(line string, key string) (string, bool) {
+	left, right, ok := assignment(line)
+	if !ok || left != key {
+		return "", false
+	}
+	return right, true
+}
+
+func assignment(line string) (string, string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return "", false
+		return "", "", false
 	}
 	if strings.HasPrefix(trimmed, "export ") {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
 	}
 	left, _, ok := strings.Cut(trimmed, "=")
 	if !ok {
-		return "", false
-	}
-	if strings.TrimSpace(left) != key {
-		return "", false
+		return "", "", false
 	}
 	_, right, _ := strings.Cut(trimmed, "=")
-	return right, true
+	return strings.TrimSpace(left), right, true
 }
 
 func parseEnvValue(value string) (string, error) {
