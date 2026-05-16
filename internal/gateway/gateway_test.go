@@ -54,6 +54,19 @@ func testAnthropicMessagesConfig(baseURL string) config.Config {
 	return cfg
 }
 
+func testResponsesConfig(baseURL string) config.Config {
+	cfg := testConfig(baseURL)
+	provider := cfg.Providers["openrouter"]
+	provider.Profile = "responses"
+	cfg.Providers["openrouter"] = provider
+	cfg.Routes = map[string][]config.Route{
+		"gpt-5.5": {
+			{Provider: "openrouter", Model: "openai/gpt-5.5", DisplayName: "GPT 5.5"},
+		},
+	}
+	return cfg
+}
+
 func authHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer client-test-key")
@@ -273,6 +286,145 @@ func TestGatewayProxiesAnthropicMessagesProfileToOpenRouterMessages(t *testing.T
 	}
 	if !strings.Contains(string(body["content"]), `"tool_use"`) {
 		t.Fatalf("tool_use response block was not preserved: %s", body["content"])
+	}
+}
+
+func TestGatewayProxiesResponsesProfileToOpenRouterResponses(t *testing.T) {
+	var upstreamBody map[string]json.RawMessage
+	var upstreamHeaders http.Header
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("upstream path = %s", r.URL.Path)
+		}
+		upstreamHeaders = r.Header.Clone()
+		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
+			t.Fatalf("decode upstream body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id":"resp_1",
+			"object":"response",
+			"status":"completed",
+			"model":"openai/gpt-5.5",
+			"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]
+		}`)
+	}))
+	defer upstream.Close()
+
+	app := gateway.New(testResponsesConfig(upstream.URL), upstream.Client())
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{
+		"model":"gpt-5.5",
+		"input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}],
+		"stream":false,
+		"reasoning":{"effort":"medium"},
+		"tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{"key":{"type":"string"}}}}],
+		"tool_choice":"auto"
+	}`))
+	authHeaders(req)
+	res := httptest.NewRecorder()
+
+	app.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if got := upstreamHeaders.Get("Authorization"); got != "Bearer or-test-key" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	var upstreamModel string
+	if err := json.Unmarshal(upstreamBody["model"], &upstreamModel); err != nil {
+		t.Fatalf("upstream model JSON: %v", err)
+	}
+	if upstreamModel != "openai/gpt-5.5" {
+		t.Fatalf("upstream model = %q", upstreamModel)
+	}
+	if len(upstreamBody["reasoning"]) == 0 {
+		t.Fatalf("reasoning was not preserved: %#v", upstreamBody)
+	}
+	if len(upstreamBody["tools"]) == 0 || len(upstreamBody["tool_choice"]) == 0 {
+		t.Fatalf("tools were not preserved: %#v", upstreamBody)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response JSON: %v", err)
+	}
+	var model string
+	if err := json.Unmarshal(body["model"], &model); err != nil {
+		t.Fatalf("response model JSON: %v", err)
+	}
+	if model != "gpt-5.5" {
+		t.Fatalf("response model = %q", model)
+	}
+}
+
+func TestGatewayStreamsResponsesAndRewritesNestedModel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("upstream path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "event: response.created\n")
+		_, _ = io.WriteString(w, `data: {"type":"response.created","response":{"id":"resp_1","model":"openai/gpt-5.5","status":"in_progress"}}`+"\n\n")
+		_, _ = io.WriteString(w, "event: response.completed\n")
+		_, _ = io.WriteString(w, `data: {"type":"response.completed","response":{"id":"resp_1","model":"openai/gpt-5.5","status":"completed"}}`+"\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer upstream.Close()
+
+	app := gateway.New(testResponsesConfig(upstream.URL), upstream.Client())
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{
+		"model":"gpt-5.5",
+		"input":"hello",
+		"stream":true
+	}`))
+	authHeaders(req)
+	res := httptest.NewRecorder()
+
+	app.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, `"model":"gpt-5.5"`) {
+		t.Fatalf("stream did not rewrite model: %s", body)
+	}
+	if strings.Contains(body, "openai/gpt-5.5") {
+		t.Fatalf("stream leaked upstream model: %s", body)
+	}
+}
+
+func TestGatewayResponsesUsesOpenAIErrorShape(t *testing.T) {
+	app := gateway.New(testResponsesConfig("https://openrouter.ai/api/v1"), http.DefaultClient)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"input":"hello"}`))
+	authHeaders(req)
+	res := httptest.NewRecorder()
+
+	app.ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Message string  `json:"message"`
+			Type    string  `json:"type"`
+			Param   *string `json:"param"`
+			Code    *string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response JSON: %v", err)
+	}
+	if body.Error.Message != "model is required" || body.Error.Type != "invalid_request_error" {
+		t.Fatalf("error = %#v", body.Error)
 	}
 }
 

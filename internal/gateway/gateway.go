@@ -21,6 +21,7 @@ type Gateway struct {
 	cfg       config.Config
 	openAI    upstreamAdapter
 	anthropic upstreamAdapter
+	responses responsesAdapter
 	catalog   *openRouterModelCatalog
 }
 
@@ -65,6 +66,7 @@ func New(cfg config.Config, client *http.Client) http.Handler {
 		cfg:       cfg,
 		openAI:    openAIAdapter{client: client},
 		anthropic: anthropicAdapter{client: client},
+		responses: responsesAdapter{client: client},
 		catalog:   newOpenRouterModelCatalog(client),
 	}
 }
@@ -75,6 +77,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case strings.HasPrefix(r.URL.Path, "/v1/"):
 		if !g.hasValidGatewayAuth(r.Header) {
+			if r.URL.Path == "/v1/responses" {
+				writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+				return
+			}
 			writeAnthropicError(w, http.StatusUnauthorized, authenticationError, "Invalid API key")
 			return
 		}
@@ -90,6 +96,8 @@ func (g *Gateway) serveV1(w http.ResponseWriter, r *http.Request) {
 		g.handleModels(w)
 	case r.URL.Path == "/v1/messages" && r.Method == http.MethodPost:
 		g.handleMessages(w, r)
+	case r.URL.Path == "/v1/responses" && r.Method == http.MethodPost:
+		g.handleResponses(w, r)
 	default:
 		writeAnthropicError(w, http.StatusNotFound, notFoundError, "Endpoint not found")
 	}
@@ -467,6 +475,17 @@ func writeAnthropicError(w http.ResponseWriter, status int, kind anthropicErrorT
 		"error": map[string]string{
 			"type":    string(kind),
 			"message": message,
+		},
+	})
+}
+
+func writeOpenAIError(w http.ResponseWriter, status int, kind string, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]any{
+			"message": message,
+			"type":    kind,
+			"param":   nil,
+			"code":    nil,
 		},
 	})
 }
