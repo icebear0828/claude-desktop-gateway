@@ -295,6 +295,82 @@ func TestRealOpenRouterAnthropicMessagesToolsThreeSequentialCalls(t *testing.T) 
 	}
 }
 
+func TestRealOpenRouterResponsesCompletesThreeSequentialCalls(t *testing.T) {
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) == "" {
+		t.Skip("OPENROUTER_API_KEY is not set")
+	}
+
+	cfg := realResponsesConfig()
+	app := gateway.New(cfg, http.DefaultClient)
+
+	for i := 1; i <= 3; i++ {
+		expected := "GWRESP" + strconv.Itoa(i) + "OK"
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{
+			"model":"gpt-5.5",
+			"input":"Return only this exact string, with no spaces or explanation: `+expected+`",
+			"max_output_tokens":32,
+			"stream":false,
+			"temperature":0
+		}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer real-gateway-test")
+		res := httptest.NewRecorder()
+
+		app.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Fatalf("call %d status = %d, body = %s", i, res.Code, res.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+			t.Fatalf("call %d response JSON: %v", i, err)
+		}
+		if body["model"] != "gpt-5.5" {
+			t.Fatalf("call %d model = %v, body = %s", i, body["model"], res.Body.String())
+		}
+		text := responsesOutputText(body)
+		if !strings.Contains(text, expected) {
+			t.Fatalf("call %d text = %q, want %q; body = %s", i, text, expected, res.Body.String())
+		}
+	}
+}
+
+func TestRealOpenRouterResponsesStreamsThreeSequentialCalls(t *testing.T) {
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) == "" {
+		t.Skip("OPENROUTER_API_KEY is not set")
+	}
+
+	cfg := realResponsesConfig()
+	app := gateway.New(cfg, http.DefaultClient)
+
+	for i := 1; i <= 3; i++ {
+		expected := "GWSTREAM" + strconv.Itoa(i) + "OK"
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{
+			"model":"gpt-5.5",
+			"input":"Return only this exact string, with no spaces or explanation: `+expected+`",
+			"max_output_tokens":32,
+			"stream":true,
+			"temperature":0
+		}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer real-gateway-test")
+		res := httptest.NewRecorder()
+
+		app.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Fatalf("call %d status = %d, body = %s", i, res.Code, res.Body.String())
+		}
+		text := res.Body.String()
+		if !strings.Contains(text, "response.completed") || !strings.Contains(responsesStreamTextDeltas(t, text), expected) {
+			t.Fatalf("call %d stream = %s", i, text)
+		}
+		if !strings.Contains(text, `"model":"gpt-5.5"`) {
+			t.Fatalf("call %d stream did not expose requested model: %s", i, text)
+		}
+	}
+}
+
 func streamTextDeltas(t *testing.T, stream string) string {
 	t.Helper()
 
@@ -319,6 +395,54 @@ func streamTextDeltas(t *testing.T, stream string) string {
 		}
 		if event.Delta.Type == "text_delta" {
 			b.WriteString(event.Delta.Text)
+		}
+	}
+	return b.String()
+}
+
+func responsesStreamTextDeltas(t *testing.T, stream string) string {
+	t.Helper()
+
+	var b strings.Builder
+	for _, line := range strings.Split(stream, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var event struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+		if event.Type == "response.output_text.delta" {
+			b.WriteString(event.Delta)
+		}
+	}
+	return b.String()
+}
+
+func responsesOutputText(body map[string]any) string {
+	if text, ok := body["output_text"].(string); ok && text != "" {
+		return text
+	}
+	output, _ := body["output"].([]any)
+	var b strings.Builder
+	for _, item := range output {
+		itemMap, _ := item.(map[string]any)
+		content, _ := itemMap["content"].([]any)
+		for _, block := range content {
+			blockMap, _ := block.(map[string]any)
+			if blockMap["type"] == "output_text" {
+				if text, ok := blockMap["text"].(string); ok {
+					b.WriteString(text)
+				}
+			}
 		}
 	}
 	return b.String()
@@ -371,4 +495,30 @@ func realDynamicFreeModelsConfig() config.Config {
 		},
 	}
 	return cfg
+}
+
+func realResponsesConfig() config.Config {
+	upstreamModel := strings.TrimSpace(os.Getenv("OPENROUTER_RESPONSES_MODEL"))
+	if upstreamModel == "" {
+		upstreamModel = "openrouter/auto"
+	}
+	return config.Config{
+		Host:          "127.0.0.1",
+		Port:          8787,
+		GatewayAPIKey: "real-gateway-test",
+		Providers: map[string]config.Provider{
+			"openrouter": {
+				Profile:      "responses",
+				BaseURL:      config.DefaultOpenRouterURL,
+				APIKey:       strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
+				Title:        "Claude Desktop Gateway Go Real Responses Test",
+				Capabilities: config.DefaultProviderCapabilities(),
+			},
+		},
+		Routes: map[string][]config.Route{
+			"gpt-5.5": {
+				{Provider: "openrouter", Model: upstreamModel},
+			},
+		},
+	}
 }

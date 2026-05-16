@@ -127,6 +127,25 @@ Authorization = "Bearer <CLAUDE_GATEWAY_API_KEY>"
 
 如果 `~/.codex/auth.json` 存在，doctor 会给出 warning，因为它可能影响 Codex 运行时实际使用的鉴权路径。
 
+Codex App 会向本地网关调用 OpenAI Responses API：`POST /v1/responses`。对应的网关 provider 需要使用 Responses-compatible profile，例如：
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "profile": "responses",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  },
+  "routes": {
+    "gpt-5.5": [
+      { "provider": "openrouter", "model": "openrouter/auto" }
+    ]
+  }
+}
+```
+
 ## 模型路由
 
 `gateway.local.json` 把 Claude Desktop 模型名和真实上游模型分开。默认 Ring 路由：
