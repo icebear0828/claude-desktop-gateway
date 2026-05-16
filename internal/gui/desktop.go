@@ -93,7 +93,7 @@ func (s *Service) desktopModelIDs() ([]string, error) {
 	modelIDs := make([]string, 0, len(summary.Routes))
 	for _, route := range summary.Routes {
 		desktopID := strings.TrimSpace(route.DesktopID)
-		if desktopID != "" {
+		if isClaudeDesktopModelID(desktopID) {
 			modelIDs = append(modelIDs, desktopID)
 		}
 	}
@@ -112,4 +112,8 @@ func (s *Service) desktopBaseURL() string {
 		return defaultBaseURL()
 	}
 	return listenURL(summary)
+}
+
+func isClaudeDesktopModelID(modelID string) bool {
+	return strings.HasPrefix(modelID, "claude-") || strings.HasPrefix(modelID, "anthropic/claude-")
 }
