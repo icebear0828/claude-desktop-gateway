@@ -44,6 +44,8 @@ describe("frontend i18n", () => {
     expect(translate("en", "desktop.repair")).toBe("REPAIR CONFIG");
     expect(translate("zh-CN", "desktop.repair")).toBe("修复配置");
     expect(translate("zh-CN", "desktop.repairDone")).toContain("重启 Claude Desktop");
+    expect(translate("en", "codex.repair")).toBe("REPAIR CONFIG");
+    expect(translate("zh-CN", "codex.repairDone")).toContain("重启 Codex App");
   });
 
   it("stores only supported locale values", () => {

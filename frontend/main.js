@@ -43,6 +43,13 @@ const elements = {
   desktopProfile: document.getElementById("desktop-profile"),
   desktopMessage: document.getElementById("desktop-message"),
   desktopIssues: document.getElementById("desktop-issues"),
+  codexState: document.getElementById("codex-state"),
+  codexApply: document.getElementById("codex-apply"),
+  codexProvider: document.getElementById("codex-provider"),
+  codexModel: document.getElementById("codex-model"),
+  codexConfig: document.getElementById("codex-config"),
+  codexMessage: document.getElementById("codex-message"),
+  codexIssues: document.getElementById("codex-issues"),
   generatedAt: document.getElementById("generated-at"),
 };
 
@@ -118,6 +125,10 @@ function showEditorMessage(message, state = "error") {
 
 function showDesktopMessage(message, state = "error") {
   setNotice(elements.desktopMessage, message, state);
+}
+
+function showCodexMessage(message, state = "error") {
+  setNotice(elements.codexMessage, message, state);
 }
 
 function updateLocaleControls() {
@@ -240,13 +251,13 @@ function renderProviders(providers) {
   }
 }
 
-function renderIssues(issues) {
-  clear(elements.desktopIssues);
+function renderIssues(container, issues, emptyKey) {
+  clear(container);
   if (issues.length === 0) {
     const ok = document.createElement("p");
     ok.className = "mono-line";
-    ok.textContent = t("desktop.noIssues");
-    elements.desktopIssues.appendChild(ok);
+    ok.textContent = t(emptyKey);
+    container?.appendChild(ok);
     return;
   }
   for (const issue of issues) {
@@ -262,7 +273,7 @@ function renderIssues(issues) {
     item.appendChild(title);
     item.appendChild(message);
     item.appendChild(path);
-    elements.desktopIssues.appendChild(item);
+    container?.appendChild(item);
   }
 }
 
@@ -286,6 +297,13 @@ function fallbackDashboard() {
       state: "warning",
       appliedId: "",
       activeProfilePath: "",
+      issues: [],
+    },
+    codexApp: {
+      state: "warning",
+      activeProvider: "",
+      model: "",
+      configPath: "",
       issues: [],
     },
     generatedAtIso: new Date().toISOString(),
@@ -371,7 +389,16 @@ function renderDashboard(dashboard) {
   setText(elements.desktopApplied, desktop.appliedId);
   setText(elements.desktopProfile, desktop.activeProfilePath);
   elements.desktopApply?.classList.toggle("hidden", desktopIssues.length === 0);
-  renderIssues(desktopIssues);
+  renderIssues(elements.desktopIssues, desktopIssues, "desktop.noIssues");
+
+  const codex = dashboard.codexApp || { state: "unknown", issues: [] };
+  const codexIssues = codex.issues || [];
+  setStatus(elements.codexState, codex.state);
+  setText(elements.codexProvider, codex.activeProvider);
+  setText(elements.codexModel, codex.model);
+  setText(elements.codexConfig, codex.configPath);
+  elements.codexApply?.classList.toggle("hidden", codexIssues.length === 0);
+  renderIssues(elements.codexIssues, codexIssues, "codex.noIssues");
 
   setText(elements.generatedAt, t("footer.updated", { time: dashboard.generatedAtIso || "-" }));
 }
@@ -632,6 +659,25 @@ async function applyClaudeDesktopConfig() {
   }
 }
 
+async function applyCodexAppConfig() {
+  const method = bridge("ApplyCodexAppConfig");
+  if (!method) {
+    showCodexMessage(t("codex.bridgeRepairUnavailable"));
+    return;
+  }
+  elements.codexApply?.setAttribute("disabled", "true");
+  showCodexMessage("");
+  try {
+    await method();
+    await loadAll();
+    showCodexMessage(t("codex.repairDone"), "ok");
+  } catch (error) {
+    showCodexMessage(error instanceof Error ? error.message : String(error));
+  } finally {
+    elements.codexApply?.removeAttribute("disabled");
+  }
+}
+
 async function loadDashboardOnly() {
   try {
     const dashboard = await fetchDashboard();
@@ -668,6 +714,7 @@ elements.routeForm?.addEventListener("submit", saveRoute);
 elements.routeSuggest?.addEventListener("click", suggestDesktopID);
 elements.routeReset?.addEventListener("click", resetRouteForm);
 elements.desktopApply?.addEventListener("click", applyClaudeDesktopConfig);
+elements.codexApply?.addEventListener("click", applyCodexAppConfig);
 
 applyTranslations(document, currentLocale);
 updateLocaleControls();

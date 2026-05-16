@@ -17,6 +17,7 @@ const (
 	DefaultPort           = 8787
 	DefaultOpenRouterURL  = "https://openrouter.ai/api/v1"
 	DefaultOpenRouterName = "openrouter"
+	DefaultResponsesName  = "openrouter-responses"
 	DefaultTitle          = "Claude Gateway"
 )
 

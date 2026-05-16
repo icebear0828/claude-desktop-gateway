@@ -116,3 +116,38 @@ func TestNewEditableRouteDefaultsDesktopID(t *testing.T) {
 		t.Fatalf("DisplayName = %q", route.DisplayName)
 	}
 }
+
+func TestDefaultEditableFileIncludesCodexResponsesRoute(t *testing.T) {
+	editable := config.DefaultEditableFile("gateway.local.json")
+
+	providers := map[string]config.EditableProvider{}
+	for _, provider := range editable.Providers {
+		providers[provider.Name] = provider
+	}
+	responsesProvider, ok := providers["openrouter-responses"]
+	if !ok {
+		t.Fatalf("openrouter-responses provider missing: %#v", editable.Providers)
+	}
+	if responsesProvider.Profile != "responses" {
+		t.Fatalf("responses provider profile = %q", responsesProvider.Profile)
+	}
+	if responsesProvider.APIKeyEnv != "OPENROUTER_API_KEY" {
+		t.Fatalf("responses provider apiKeyEnv = %q", responsesProvider.APIKeyEnv)
+	}
+
+	foundRoute := false
+	for _, route := range editable.Routes {
+		if route.DesktopID == "gpt-5.5" {
+			foundRoute = true
+			if route.Provider != "openrouter-responses" {
+				t.Fatalf("gpt-5.5 provider = %q", route.Provider)
+			}
+			if route.UpstreamModel != "openrouter/auto" {
+				t.Fatalf("gpt-5.5 upstream = %q", route.UpstreamModel)
+			}
+		}
+	}
+	if !foundRoute {
+		t.Fatalf("gpt-5.5 route missing: %#v", editable.Routes)
+	}
+}

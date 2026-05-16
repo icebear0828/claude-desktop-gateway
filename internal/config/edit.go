@@ -82,15 +82,32 @@ func DefaultEditableFile(path string) EditableFile {
 		Host:             DefaultHost,
 		Port:             DefaultPort,
 		GatewayAPIKeyEnv: "CLAUDE_GATEWAY_API_KEY",
-		Providers: []EditableProvider{{
-			Name:         DefaultOpenRouterName,
-			Profile:      "anthropic-messages",
-			BaseURL:      DefaultOpenRouterURL,
-			APIKeyEnv:    "OPENROUTER_API_KEY",
-			Title:        DefaultTitle,
-			Capabilities: DefaultProviderCapabilities(),
-		}},
+		Providers: []EditableProvider{
+			{
+				Name:         DefaultOpenRouterName,
+				Profile:      "anthropic-messages",
+				BaseURL:      DefaultOpenRouterURL,
+				APIKeyEnv:    "OPENROUTER_API_KEY",
+				Title:        DefaultTitle,
+				Capabilities: DefaultProviderCapabilities(),
+			},
+			{
+				Name:         DefaultResponsesName,
+				Profile:      "responses",
+				BaseURL:      DefaultOpenRouterURL,
+				APIKeyEnv:    "OPENROUTER_API_KEY",
+				Title:        DefaultTitle,
+				Capabilities: DefaultProviderCapabilities(),
+			},
+		},
 		Routes: []EditableRoute{
+			{
+				DesktopID:     "gpt-5.5",
+				Provider:      DefaultResponsesName,
+				UpstreamModel: "openrouter/auto",
+				DisplayName:   "Codex GPT 5.5 Auto",
+				Cache:         cache,
+			},
 			{
 				DesktopID:         "claude-free-agent",
 				Provider:          DefaultOpenRouterName,
