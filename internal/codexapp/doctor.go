@@ -112,6 +112,13 @@ func Diagnose(options DiagnosticOptions) (Report, error) {
 	if strings.TrimRight(report.BaseURL, "/") != expectedBaseURL {
 		report.add("error", "base_url_mismatch", paths.ConfigPath, fmt.Sprintf("base_url is %q, expected %q", report.BaseURL, expectedBaseURL))
 	}
+	if err := validateGatewayBaseURL(strings.TrimRight(report.BaseURL, "/")); err != nil {
+		code := "base_url_invalid"
+		if strings.Contains(err.Error(), "http only for loopback") {
+			code = "base_url_insecure"
+		}
+		report.add("error", code, paths.ConfigPath, err.Error())
+	}
 	if report.WireAPI != DefaultWireAPI {
 		report.add("error", "wire_api_not_responses", paths.ConfigPath, fmt.Sprintf("wire_api is %q, expected %q", report.WireAPI, DefaultWireAPI))
 	}
@@ -188,8 +195,8 @@ func parseConfig(body string, providerName string) parsedConfig {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "[") && strings.Contains(line, "]") {
-			section = strings.TrimSpace(line[1:strings.Index(line, "]")])
+		if normalizedSection, ok := tableSection(line); ok {
+			section = normalizedSection
 			if section == providerSection {
 				parsed.providerExists = true
 			}

@@ -98,6 +98,43 @@ memories = true
 	}
 }
 
+func TestApplyLocalReplacesQuotedGatewayProviderBlock(t *testing.T) {
+	home := t.TempDir()
+	paths := codexapp.PathsForHome(home, "darwin")
+	writeText(t, paths.ConfigPath, `model = "old-model"
+model_provider = "local_gateway"
+
+[model_providers."local_gateway"]
+name = "Old"
+base_url = "http://127.0.0.1:9999/v1"
+wire_api = "chat"
+
+[model_providers."local_gateway".http_headers]
+Authorization = "Bearer old-key"
+
+[projects."/Users/c/claude-desktop-gateway"]
+trust_level = "trusted"
+`)
+
+	_, err := codexapp.ApplyLocal(codexapp.ApplyOptions{
+		Paths:         paths,
+		BaseURL:       "http://127.0.0.1:8787/v1",
+		GatewayAPIKey: "new-test-key",
+		Model:         "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatalf("ApplyLocal returned error: %v", err)
+	}
+
+	body := readText(t, paths.ConfigPath)
+	if strings.Contains(body, "old-key") || strings.Contains(body, "http://127.0.0.1:9999/v1") || strings.Contains(body, `[model_providers."local_gateway"]`) {
+		t.Fatalf("stale quoted provider block remained:\n%s", body)
+	}
+	if !strings.Contains(body, `[projects."/Users/c/claude-desktop-gateway"]`) || !strings.Contains(body, `trust_level = "trusted"`) {
+		t.Fatalf("unrelated project config was not preserved:\n%s", body)
+	}
+}
+
 func TestApplyLocalRejectsLANHTTP(t *testing.T) {
 	_, err := codexapp.ApplyLocal(codexapp.ApplyOptions{
 		Paths:         codexapp.PathsForHome(t.TempDir(), "darwin"),

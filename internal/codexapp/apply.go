@@ -168,7 +168,99 @@ func tableSection(line string) (string, bool) {
 	if !strings.HasPrefix(trimmed, "[") || !strings.Contains(trimmed, "]") {
 		return "", false
 	}
-	return strings.TrimSpace(trimmed[1:strings.Index(trimmed, "]")]), true
+	raw := strings.TrimSpace(trimmed[1:strings.Index(trimmed, "]")])
+	if normalized, ok := normalizeTablePath(raw); ok {
+		return normalized, true
+	}
+	return raw, true
+}
+
+func normalizeTablePath(path string) (string, bool) {
+	segments := []string{}
+	index := 0
+	for {
+		index = skipSpaces(path, index)
+		if index >= len(path) {
+			break
+		}
+
+		segment := ""
+		switch path[index] {
+		case '"':
+			value, next, ok := parseQuotedPathSegment(path, index)
+			if !ok {
+				return "", false
+			}
+			segment = value
+			index = next
+		case '\'':
+			value, next, ok := parseLiteralPathSegment(path, index)
+			if !ok {
+				return "", false
+			}
+			segment = value
+			index = next
+		default:
+			start := index
+			for index < len(path) && path[index] != '.' {
+				index++
+			}
+			segment = strings.TrimSpace(path[start:index])
+		}
+
+		if segment == "" {
+			return "", false
+		}
+		segments = append(segments, segment)
+
+		index = skipSpaces(path, index)
+		if index >= len(path) {
+			break
+		}
+		if path[index] != '.' {
+			return "", false
+		}
+		index++
+	}
+	if len(segments) == 0 {
+		return "", false
+	}
+	return strings.Join(segments, "."), true
+}
+
+func parseQuotedPathSegment(path string, start int) (string, int, bool) {
+	escaped := false
+	for index := start + 1; index < len(path); index++ {
+		switch {
+		case escaped:
+			escaped = false
+		case path[index] == '\\':
+			escaped = true
+		case path[index] == '"':
+			value, err := strconv.Unquote(path[start : index+1])
+			if err != nil {
+				return "", 0, false
+			}
+			return value, index + 1, true
+		}
+	}
+	return "", 0, false
+}
+
+func parseLiteralPathSegment(path string, start int) (string, int, bool) {
+	for index := start + 1; index < len(path); index++ {
+		if path[index] == '\'' {
+			return path[start+1 : index], index + 1, true
+		}
+	}
+	return "", 0, false
+}
+
+func skipSpaces(value string, start int) int {
+	for start < len(value) && (value[start] == ' ' || value[start] == '\t') {
+		start++
+	}
+	return start
 }
 
 func trimTrailingEmptyLines(lines []string) []string {

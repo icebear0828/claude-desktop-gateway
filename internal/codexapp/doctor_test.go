@@ -40,6 +40,28 @@ Authorization = "Bearer test-key"
 	}
 }
 
+func TestDiagnoseFindsQuotedLocalGatewayProvider(t *testing.T) {
+	home := t.TempDir()
+	paths := codexapp.PathsForHome(home, "darwin")
+	writeText(t, paths.ConfigPath, `model = "gpt-5.5"
+model_provider = "local_gateway"
+
+[model_providers."local_gateway"]
+name = "Local Gateway"
+base_url = "http://127.0.0.1:8787/v1"
+wire_api = "responses"
+
+[model_providers."local_gateway".http_headers]
+Authorization = "Bearer test-key"
+`)
+
+	report := diagnose(t, paths)
+
+	if got := codexIssueCodes(report); got != "" {
+		t.Fatalf("issueCodes = %q", got)
+	}
+}
+
 func TestDiagnoseReportsMissingAndMismatchedProviderFields(t *testing.T) {
 	home := t.TempDir()
 	paths := codexapp.PathsForHome(home, "darwin")
@@ -63,6 +85,33 @@ wire_api = "chat"
 		if !hasCodexIssue(report, code) {
 			t.Fatalf("expected %s, got %q", code, codexIssueCodes(report))
 		}
+	}
+}
+
+func TestDiagnoseRejectsLANHTTP(t *testing.T) {
+	home := t.TempDir()
+	paths := codexapp.PathsForHome(home, "darwin")
+	writeText(t, paths.ConfigPath, `model = "gpt-5.5"
+model_provider = "local_gateway"
+
+[model_providers.local_gateway]
+name = "Local Gateway"
+base_url = "http://192.168.10.6:8787/v1"
+wire_api = "responses"
+
+[model_providers.local_gateway.http_headers]
+Authorization = "Bearer test-key"
+`)
+
+	report, err := codexapp.Diagnose(codexapp.DiagnosticOptions{
+		Paths:           paths,
+		ExpectedBaseURL: "http://192.168.10.6:8787/v1",
+	})
+	if err != nil {
+		t.Fatalf("Diagnose returned error: %v", err)
+	}
+	if !hasCodexIssue(report, "base_url_insecure") {
+		t.Fatalf("expected base_url_insecure, got %q", codexIssueCodes(report))
 	}
 }
 
