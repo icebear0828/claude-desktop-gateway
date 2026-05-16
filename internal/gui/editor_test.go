@@ -375,6 +375,30 @@ func TestApplyCodexAppConfigWritesLocalProvider(t *testing.T) {
 	}
 }
 
+func TestApplyCodexAppConfigRejectsNonResponsesRoute(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := writeEditorConfigWithInvalidCodexRoute(t, repoRoot)
+	envPath := filepath.Join(repoRoot, ".env.local")
+	if err := os.WriteFile(envPath, []byte("export CLAUDE_GATEWAY_API_KEY='client-test-key'\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	service := gui.NewService(gui.Options{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		EnvPath:    envPath,
+		CodexPaths: codexapp.PathsForHome(t.TempDir(), "darwin"),
+	})
+
+	_, err := service.ApplyCodexAppConfig()
+	if err == nil {
+		t.Fatal("ApplyCodexAppConfig returned nil error for non-responses Codex route")
+	}
+	if !strings.Contains(err.Error(), `expected provider profile "responses"`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func writeEditorConfig(t *testing.T, repoRoot string) string {
 	t.Helper()
 	return writeEditorConfigWithPort(t, repoRoot, 8787)
@@ -411,6 +435,41 @@ func writeEditorConfigWithPort(t *testing.T, repoRoot string, port int) string {
 }
 
 func writeEditorConfigWithCodexRoute(t *testing.T, repoRoot string) string {
+	t.Helper()
+	configPath := filepath.Join(repoRoot, "gateway.local.json")
+	body := `{
+		"host": "127.0.0.1",
+		"port": 8787,
+		"gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
+		"providers": {
+			"openrouter": {
+				"profile": "openai-chat",
+				"baseUrl": "https://openrouter.ai/api/v1",
+				"apiKeyEnv": "OPENROUTER_API_KEY"
+			},
+			"openrouter-responses": {
+				"profile": "responses",
+				"baseUrl": "https://openrouter.ai/api/v1",
+				"apiKeyEnv": "OPENROUTER_API_KEY"
+			}
+		},
+		"routes": {
+			"gpt-5.5": [
+				{
+					"provider": "openrouter-responses",
+					"model": "openrouter/auto",
+					"displayName": "Codex Auto"
+				}
+			]
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return configPath
+}
+
+func writeEditorConfigWithInvalidCodexRoute(t *testing.T, repoRoot string) string {
 	t.Helper()
 	configPath := filepath.Join(repoRoot, "gateway.local.json")
 	body := `{

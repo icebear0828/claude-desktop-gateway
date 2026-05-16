@@ -116,12 +116,15 @@ func (s *Service) Dashboard(ctx context.Context) Dashboard {
 			dashboard.ListenURL = baseURL
 			dashboard.Providers = summary.Providers
 			dashboard.Routes = summary.Routes
+			dashboard.CodexApp = s.codexAppStatus(responsesBaseURL(expectedBaseURL(s.options.ExpectedBaseURL, baseURL)), summary)
 		}
 	}
 
 	dashboard.Gateway = s.gatewayStatus(ctx, healthURLForBaseURL(s.options.HealthURL, baseURL))
 	dashboard.ClaudeDesktop = s.claudeDesktopStatus(expectedBaseURL(s.options.ExpectedBaseURL, baseURL))
-	dashboard.CodexApp = s.codexAppStatus(responsesBaseURL(expectedBaseURL(s.options.ExpectedBaseURL, baseURL)))
+	if dashboard.CodexApp.State == "" {
+		dashboard.CodexApp = s.codexAppStatus(responsesBaseURL(expectedBaseURL(s.options.ExpectedBaseURL, baseURL)), config.FileSummary{})
+	}
 	return dashboard
 }
 
@@ -468,7 +471,7 @@ func (s *Service) claudeDesktopStatus(expectedBaseURL string) ClaudeDesktopStatu
 	return status
 }
 
-func (s *Service) codexAppStatus(expectedBaseURL string) CodexAppStatus {
+func (s *Service) codexAppStatus(expectedBaseURL string, summary config.FileSummary) CodexAppStatus {
 	report, err := codexapp.Diagnose(codexapp.DiagnosticOptions{
 		Paths:           s.options.CodexPaths,
 		ExpectedBaseURL: expectedBaseURL,
@@ -502,6 +505,17 @@ func (s *Service) codexAppStatus(expectedBaseURL string) CodexAppStatus {
 			Path:     issue.Path,
 			Message:  issue.Message,
 		})
+	}
+	if len(summary.Routes) > 0 && strings.TrimSpace(report.Model) != "" {
+		if _, err := codexResponsesModelID(summary, report.Model); err != nil {
+			hasError = true
+			status.Issues = append(status.Issues, DesktopIssue{
+				Severity: "error",
+				Code:     "gateway_codex_route_invalid",
+				Path:     s.options.ConfigPath,
+				Message:  err.Error(),
+			})
+		}
 	}
 	if hasError {
 		status.State = "error"
