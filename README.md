@@ -87,6 +87,46 @@ Claude Desktop profile 的核心字段形态：
 
 `apply-local` 会把 `CLAUDE_GATEWAY_API_KEY` 写入 Claude Desktop profile 供本地鉴权使用，输出会脱敏。设置 `CLAUDE_GATEWAY_CONFIG` 时，`inferenceModels` 会从网关路由推导。
 
+## Codex App 配置
+
+Codex App/CLI 可以通过本地 provider 指向同一个网关。当前配置入口会写入 `~/.codex/config.toml` 的 `model_providers.local_gateway`，使用 `wire_api = "responses"`，并把网关客户端 key 写入本机 Codex config 的 Authorization header。命令输出会脱敏。
+
+诊断当前 Codex App provider 配置：
+
+```bash
+GOCACHE=/private/tmp/go-build-cache go run ./cmd/codex-app-config doctor
+```
+
+应用或修复本地 Codex App provider：
+
+```bash
+source .env.local
+GOCACHE=/private/tmp/go-build-cache go run ./cmd/codex-app-config apply-local
+```
+
+只预览不写入：
+
+```bash
+GOCACHE=/private/tmp/go-build-cache go run ./cmd/codex-app-config apply-local --dry-run
+```
+
+默认写入的核心配置形态：
+
+```toml
+model = "gpt-5.5"
+model_provider = "local_gateway"
+
+[model_providers.local_gateway]
+name = "Local Gateway"
+base_url = "http://127.0.0.1:8787/v1"
+wire_api = "responses"
+
+[model_providers.local_gateway.http_headers]
+Authorization = "Bearer <CLAUDE_GATEWAY_API_KEY>"
+```
+
+如果 `~/.codex/auth.json` 存在，doctor 会给出 warning，因为它可能影响 Codex 运行时实际使用的鉴权路径。
+
 ## 模型路由
 
 `gateway.local.json` 把 Claude Desktop 模型名和真实上游模型分开。默认 Ring 路由：
