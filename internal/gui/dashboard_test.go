@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/local/claude-desktop-gateway/internal/claudedesktop"
+	"github.com/local/claude-desktop-gateway/internal/codexapp"
 	"github.com/local/claude-desktop-gateway/internal/gui"
 )
 
@@ -61,6 +62,16 @@ func TestDashboardCombinesConfigGatewayAndClaudeDesktopState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyLocal returned error: %v", err)
 	}
+	codexPaths := codexapp.PathsForHome(home, "darwin")
+	_, err = codexapp.ApplyLocal(codexapp.ApplyOptions{
+		Paths:         codexPaths,
+		BaseURL:       "http://127.0.0.1:8787/v1",
+		GatewayAPIKey: "client-test-key",
+		Model:         "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatalf("Codex ApplyLocal returned error: %v", err)
+	}
 
 	service := gui.NewService(gui.Options{
 		RepoRoot:        repoRoot,
@@ -69,6 +80,7 @@ func TestDashboardCombinesConfigGatewayAndClaudeDesktopState(t *testing.T) {
 		HealthURL:       "http://gateway.test/health",
 		ExpectedBaseURL: "http://127.0.0.1:8787",
 		DesktopPaths:    paths,
+		CodexPaths:      codexPaths,
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -109,6 +121,12 @@ func TestDashboardCombinesConfigGatewayAndClaudeDesktopState(t *testing.T) {
 	}
 	if dashboard.ClaudeDesktop.AppliedID != claudedesktop.DefaultProfileID {
 		t.Fatalf("AppliedID = %q", dashboard.ClaudeDesktop.AppliedID)
+	}
+	if dashboard.CodexApp.State != "ok" {
+		t.Fatalf("CodexApp state = %q issues=%#v", dashboard.CodexApp.State, dashboard.CodexApp.Issues)
+	}
+	if dashboard.CodexApp.ActiveProvider != codexapp.DefaultProviderName {
+		t.Fatalf("Codex active provider = %q", dashboard.CodexApp.ActiveProvider)
 	}
 }
 

@@ -53,6 +53,10 @@ func (a *App) ApplyClaudeDesktopConfig() (gui.ClaudeDesktopApplyResult, error) {
 	return a.service.ApplyClaudeDesktopConfig()
 }
 
+func (a *App) ApplyCodexAppConfig() (gui.CodexAppApplyResult, error) {
+	return a.service.ApplyCodexAppConfig()
+}
+
 func (a *App) SuggestedDesktopID(upstreamModel string) string {
 	return a.service.SuggestedDesktopID(upstreamModel)
 }

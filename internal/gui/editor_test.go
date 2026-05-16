@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/local/claude-desktop-gateway/internal/claudedesktop"
+	"github.com/local/claude-desktop-gateway/internal/codexapp"
 	"github.com/local/claude-desktop-gateway/internal/config"
 	"github.com/local/claude-desktop-gateway/internal/gui"
 )
@@ -62,7 +63,7 @@ func TestEditorCreatesDefaultConfigWhenMissing(t *testing.T) {
 	if state.Config.Path != configPath {
 		t.Fatalf("config path = %q, want %q", state.Config.Path, configPath)
 	}
-	if len(state.Config.Providers) != 1 || state.Config.Providers[0].Name != "openrouter" {
+	if len(state.Config.Providers) != 2 || state.Config.Providers[0].Name != "openrouter" || state.Config.Providers[1].Name != "openrouter-responses" {
 		t.Fatalf("providers = %#v", state.Config.Providers)
 	}
 	if len(state.Config.Routes) == 0 || state.Config.Routes[0].DesktopID != "claude-free-agent" {
@@ -296,6 +297,49 @@ func TestApplyClaudeDesktopConfigUsesConfiguredListenURL(t *testing.T) {
 	}
 }
 
+func TestApplyCodexAppConfigWritesLocalProvider(t *testing.T) {
+	repoRoot := t.TempDir()
+	configPath := writeEditorConfigWithCodexRoute(t, repoRoot)
+	envPath := filepath.Join(repoRoot, ".env.local")
+	if err := os.WriteFile(envPath, []byte("export CLAUDE_GATEWAY_API_KEY='client-test-key'\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	home := t.TempDir()
+	codexPaths := codexapp.PathsForHome(home, "darwin")
+	service := gui.NewService(gui.Options{
+		RepoRoot:   repoRoot,
+		ConfigPath: configPath,
+		EnvPath:    envPath,
+		CodexPaths: codexPaths,
+	})
+
+	result, err := service.ApplyCodexAppConfig()
+	if err != nil {
+		t.Fatalf("ApplyCodexAppConfig returned error: %v", err)
+	}
+	if result.ProviderName != codexapp.DefaultProviderName {
+		t.Fatalf("ProviderName = %q", result.ProviderName)
+	}
+	if result.BaseURL != "http://127.0.0.1:8787/v1" {
+		t.Fatalf("BaseURL = %q", result.BaseURL)
+	}
+	if result.Model != "gpt-5.5" {
+		t.Fatalf("Model = %q", result.Model)
+	}
+
+	report, err := codexapp.Diagnose(codexapp.DiagnosticOptions{
+		Paths:           codexPaths,
+		ExpectedBaseURL: "http://127.0.0.1:8787/v1",
+	})
+	if err != nil {
+		t.Fatalf("Diagnose returned error: %v", err)
+	}
+	if len(report.Issues) != 0 {
+		t.Fatalf("issues after repair = %#v", report.Issues)
+	}
+}
+
 func writeEditorConfig(t *testing.T, repoRoot string) string {
 	t.Helper()
 	return writeEditorConfigWithPort(t, repoRoot, 8787)
@@ -325,6 +369,36 @@ func writeEditorConfigWithPort(t *testing.T, repoRoot string, port int) string {
 			]
 		}
 	}`, port)
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return configPath
+}
+
+func writeEditorConfigWithCodexRoute(t *testing.T, repoRoot string) string {
+	t.Helper()
+	configPath := filepath.Join(repoRoot, "gateway.local.json")
+	body := `{
+		"host": "127.0.0.1",
+		"port": 8787,
+		"gatewayApiKeyEnv": "CLAUDE_GATEWAY_API_KEY",
+		"providers": {
+			"openrouter": {
+				"profile": "openai-chat",
+				"baseUrl": "https://openrouter.ai/api/v1",
+				"apiKeyEnv": "OPENROUTER_API_KEY"
+			}
+		},
+		"routes": {
+			"gpt-5.5": [
+				{
+					"provider": "openrouter",
+					"model": "openrouter/auto",
+					"displayName": "Codex Auto"
+				}
+			]
+		}
+	}`
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

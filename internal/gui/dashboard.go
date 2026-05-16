@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/local/claude-desktop-gateway/internal/claudedesktop"
+	"github.com/local/claude-desktop-gateway/internal/codexapp"
 	"github.com/local/claude-desktop-gateway/internal/config"
 	"github.com/local/claude-desktop-gateway/internal/gateway"
 	"github.com/local/claude-desktop-gateway/internal/localenv"
@@ -27,6 +28,7 @@ type Options struct {
 	HealthURL       string
 	ExpectedBaseURL string
 	DesktopPaths    claudedesktop.Paths
+	CodexPaths      codexapp.Paths
 	HTTPClient      *http.Client
 	ManageGateway   bool
 }
@@ -50,6 +52,7 @@ type Dashboard struct {
 	Providers      []config.ProviderSummary `json:"providers"`
 	Routes         []config.RouteSummary    `json:"routes"`
 	ClaudeDesktop  ClaudeDesktopStatus      `json:"claudeDesktop"`
+	CodexApp       CodexAppStatus           `json:"codexApp"`
 	GeneratedAtISO string                   `json:"generatedAtIso"`
 }
 
@@ -67,6 +70,14 @@ type ClaudeDesktopStatus struct {
 	AppliedID         string         `json:"appliedId"`
 	ActiveProfilePath string         `json:"activeProfilePath"`
 	Issues            []DesktopIssue `json:"issues"`
+}
+
+type CodexAppStatus struct {
+	State          string         `json:"state"`
+	ActiveProvider string         `json:"activeProvider"`
+	Model          string         `json:"model"`
+	ConfigPath     string         `json:"configPath"`
+	Issues         []DesktopIssue `json:"issues"`
 }
 
 type DesktopIssue struct {
@@ -110,6 +121,7 @@ func (s *Service) Dashboard(ctx context.Context) Dashboard {
 
 	dashboard.Gateway = s.gatewayStatus(ctx, healthURLForBaseURL(s.options.HealthURL, baseURL))
 	dashboard.ClaudeDesktop = s.claudeDesktopStatus(expectedBaseURL(s.options.ExpectedBaseURL, baseURL))
+	dashboard.CodexApp = s.codexAppStatus(responsesBaseURL(expectedBaseURL(s.options.ExpectedBaseURL, baseURL)))
 	return dashboard
 }
 
@@ -335,6 +347,10 @@ func healthURLForBaseURL(override string, baseURL string) string {
 	return strings.TrimRight(expectedBaseURL("", baseURL), "/") + "/health"
 }
 
+func responsesBaseURL(baseURL string) string {
+	return strings.TrimRight(expectedBaseURL("", baseURL), "/") + "/v1"
+}
+
 func (s *Service) gatewayStatus(ctx context.Context, healthURL string) GatewayStatus {
 	status := GatewayStatus{
 		State:     "stopped",
@@ -431,6 +447,49 @@ func (s *Service) claudeDesktopStatus(expectedBaseURL string) ClaudeDesktopStatu
 		AppliedID:         report.AppliedID,
 		ActiveProfilePath: report.ActiveProfilePath,
 		Issues:            make([]DesktopIssue, 0, len(report.Issues)),
+	}
+	hasError := false
+	for _, issue := range report.Issues {
+		if issue.Severity == "error" {
+			hasError = true
+		}
+		status.Issues = append(status.Issues, DesktopIssue{
+			Severity: issue.Severity,
+			Code:     issue.Code,
+			Path:     issue.Path,
+			Message:  issue.Message,
+		})
+	}
+	if hasError {
+		status.State = "error"
+	} else if len(status.Issues) > 0 {
+		status.State = "warning"
+	}
+	return status
+}
+
+func (s *Service) codexAppStatus(expectedBaseURL string) CodexAppStatus {
+	report, err := codexapp.Diagnose(codexapp.DiagnosticOptions{
+		Paths:           s.options.CodexPaths,
+		ExpectedBaseURL: expectedBaseURL,
+	})
+	if err != nil {
+		return CodexAppStatus{
+			State: "error",
+			Issues: []DesktopIssue{{
+				Severity: "error",
+				Code:     "doctor_failed",
+				Message:  err.Error(),
+			}},
+		}
+	}
+
+	status := CodexAppStatus{
+		State:          "ok",
+		ActiveProvider: report.ActiveProvider,
+		Model:          report.Model,
+		ConfigPath:     report.Paths.ConfigPath,
+		Issues:         make([]DesktopIssue, 0, len(report.Issues)),
 	}
 	hasError := false
 	for _, issue := range report.Issues {

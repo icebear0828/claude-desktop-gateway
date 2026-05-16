@@ -310,6 +310,10 @@ h3 {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.grid-apps {
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
 /* Cards (store-utility-card) */
 .block {
   background: var(--canvas);
@@ -766,7 +770,8 @@ td {
   }
 
   .grid-main,
-  .grid-secondary {
+  .grid-secondary,
+  .grid-apps {
     grid-template-columns: 1fr;
   }
 

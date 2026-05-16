@@ -127,7 +127,7 @@
         </div>
       </section>
 
-      <section class="grid grid-secondary" aria-label="Providers and Claude Desktop" data-i18n-attr="aria-label:sections.providersAndDesktop">
+      <section class="grid grid-apps" aria-label="Providers and Apps" data-i18n-attr="aria-label:sections.providersAndApps">
         <article class="block">
           <div class="block-heading">
             <h2 data-i18n="providers.title">PROVIDERS</h2>
@@ -156,6 +156,32 @@
           </dl>
           <p id="desktop-message" class="notice hidden"></p>
           <div id="desktop-issues" class="issues"></div>
+        </article>
+
+        <article class="block">
+          <div class="block-heading">
+            <h2 data-i18n="codex.title">CODEX APP</h2>
+            <div class="heading-actions">
+              <button id="codex-apply" class="button button-small button-primary hidden" type="button" data-i18n="codex.repair">REPAIR CONFIG</button>
+              <span id="codex-state" class="status status-default" data-i18n="status.unknown">UNKNOWN</span>
+            </div>
+          </div>
+          <dl class="facts compact">
+            <div>
+              <dt data-i18n="codex.activeProvider">ACTIVE PROVIDER</dt>
+              <dd id="codex-provider">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="codex.model">MODEL</dt>
+              <dd id="codex-model">-</dd>
+            </div>
+            <div>
+              <dt data-i18n="codex.config">CONFIG</dt>
+              <dd id="codex-config">-</dd>
+            </div>
+          </dl>
+          <p id="codex-message" class="notice hidden"></p>
+          <div id="codex-issues" class="issues"></div>
         </article>
       </section>
 
