@@ -17,6 +17,51 @@ function ruleBody(css: string, selector: string): string {
   return match?.groups?.body ?? "";
 }
 
+function declarations(body: string): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const declaration of body.split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator === -1) continue;
+    const property = declaration.slice(0, separator).trim();
+    const value = declaration.slice(separator + 1).trim();
+    if (property && value) {
+      result.set(property, value);
+    }
+  }
+  return result;
+}
+
+function px(value: string): number {
+  const match = /^(\d+(?:\.\d+)?)px$/.exec(value.trim());
+  expect(match, `expected pixel value, got ${value}`).not.toBeNull();
+  return Number(match?.[1] ?? 0);
+}
+
+function firstPx(value: string): number {
+  const match = /(\d+(?:\.\d+)?)px/.exec(value);
+  expect(match, `expected declaration with pixel value, got ${value}`).not.toBeNull();
+  return Number(match?.[1] ?? 0);
+}
+
+function lineHeightPx(value: string, fontSize: number): number {
+  const trimmed = value.trim();
+  if (trimmed.endsWith("px")) {
+    return px(trimmed);
+  }
+  const numeric = Number(trimmed);
+  expect(Number.isFinite(numeric), `expected numeric line-height, got ${value}`).toBe(true);
+  return numeric * fontSize;
+}
+
+function verticalPaddingPx(value: string): number {
+  const parts = value.trim().split(/\s+/);
+  expect(parts.length, `expected padding declaration, got ${value}`).toBeGreaterThan(0);
+  if (parts.length === 1) {
+    return px(parts[0]) * 2;
+  }
+  return px(parts[0]) + px(parts[2] ?? parts[0]);
+}
+
 describe("frontend visual regressions", () => {
   it("keeps the top bar in normal page flow", async () => {
     const css = await readFrontendFile("styles.css");
@@ -57,6 +102,19 @@ describe("frontend visual regressions", () => {
     expect(main).toContain("route-provider-cell");
     expect(providerCell).toMatch(/white-space\s*:\s*nowrap/);
     expect(providerCell).toMatch(/min-width\s*:\s*120px/);
+  });
+
+  it("keeps form control text vertically unclipped", async () => {
+    const css = await readFrontendFile("styles.css");
+    const input = declarations(ruleBody(css, ".input"));
+    const height = px(input.get("height") ?? "");
+    const fontSize = px(input.get("font-size") ?? "");
+    const contentHeight =
+      lineHeightPx(input.get("line-height") ?? "", fontSize) +
+      verticalPaddingPx(input.get("padding") ?? "") +
+      firstPx(input.get("border") ?? "") * 2;
+
+    expect(contentHeight).toBeLessThanOrEqual(height);
   });
 
   it("avoids dark dashboard panels and negative letter spacing", async () => {
